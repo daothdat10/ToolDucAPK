@@ -1,0 +1,8 @@
+{
+  "il2cpp_dir": "tools/Il2CppDumper",
+  "cpp2il": "tools/Cpp2IL/Cpp2IL.dll",
+  "dotnet": "tools/dotnet/dotnet.exe",
+  "jadx": "tools/jadx/bin/jadx.bat",
+  "ghidra": "tools/ghidra/ghidra_12.1.4_PUBLIC",
+  "java_home": "tools/jdk/jdk-25.0.4.1+1"
+}

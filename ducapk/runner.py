@@ -20,15 +20,17 @@ from .assemblies import assembly_report, package_name, resolver_for_job
 from .eta import ProgressEta, finish_clock, format_duration
 from .layout import ClassLayout
 from .metadata import build_cpp2il_metadata_index, build_metadata_index, class_file_name
+from .toolchain import resolve_toolchain
 
 
 ROOT = Path(__file__).resolve().parent.parent
-TOOLS = ROOT / "tools" / "Il2CppDumper"
-CPP2IL = ROOT / "tools" / "Cpp2IL" / "Cpp2IL.dll"
-DOTNET = ROOT / "tools" / "dotnet" / "dotnet.exe"
-GHIDRA = Path(r"D:\ghidra\ghidra_12.1.4_PUBLIC")
-JAVA_HOME = Path(r"D:\ghidra\jdk-25.0.4.1+1")
-JADX = ROOT / "tools" / "jadx" / "bin" / "jadx.bat"
+_toolchain = resolve_toolchain()
+TOOLS = _toolchain["il2cpp_dir"]
+CPP2IL = _toolchain["cpp2il"]
+DOTNET = _toolchain["dotnet"]
+GHIDRA = _toolchain["ghidra"]
+JAVA_HOME = _toolchain["java_home"]
+JADX = _toolchain["jadx"]
 BATCH_SIZE = 1000
 # Most IL2CPP methods decompile in well under a second; the few that hit the
 # timeout dominate total runtime, so the first pass gives up early and only
@@ -486,7 +488,7 @@ def _run_cpp2il(job: Path, emit, cancel: threading.Event,
                "--low-memory-mode"]
     emit(f"Il2CppDumper không hỗ trợ metadata; dùng Cpp2IL cho Unity {unity_version}...")
     env = os.environ.copy()
-    env["DOTNET_ROOT"] = str(ROOT / "tools" / "dotnet")
+    env["DOTNET_ROOT"] = str(DOTNET.parent)
     code = _process(command, ROOT, env, job / "cpp2il.log", emit, cancel)
     if code != 0 or not method_map.is_file():
         raise RuntimeError("Cpp2IL chưa đọc được metadata/binary. Xem cpp2il.log; "
@@ -556,7 +558,7 @@ def _headless(job: Path, args: list[str], log_file: Path, emit,
               cancel: threading.Event) -> int:
     launcher = GHIDRA / "support" / "analyzeHeadless.bat"
     if not launcher.is_file() or not (JAVA_HOME / "bin" / "java.exe").is_file():
-        raise FileNotFoundError("Thiếu Ghidra hoặc JDK tại D:\\ghidra; kiểm tra cài đặt.")
+        raise FileNotFoundError("Thiếu Ghidra hoặc JDK. Chạy Setup.bat hoặc cấu hình tool_paths.json.")
     project_dir = _project_dir(job)
     project_dir.mkdir(parents=True, exist_ok=True)
     command = [str(launcher), str(project_dir), "DucAPK", *args]

@@ -4,8 +4,25 @@
 
 ## Cài đặt và mở ứng dụng
 
-1. Chạy một lần lệnh `python -m pip install -r requirements.txt`.
-2. Nhấp đúp `DucAPK.bat` để mở ứng dụng.
+1. Clone repo hoặc tải source ZIP rồi giải nén trên **Windows x64**.
+2. Nhấp đúp **`Setup.bat`** một lần. Cần Internet để tải bộ runtime từ GitHub Release (khoảng 890 MB; dung lượng chính xác ghi trong `runtime-manifest.json`). Setup kiểm tra SHA-256, giải nén Python, .NET, Il2CppDumper, Cpp2IL, JADX, Ghidra và JDK vào `tools/`, rồi cài thư viện Python từ các wheel đi kèm. Không cần cài Python/Java/.NET thủ công hoặc quyền Administrator.
+3. Nhấp đúp **`DucAPK.bat`** để mở ứng dụng. Nếu chưa có môi trường Python, launcher sẽ gọi Setup trước.
+
+Sau lần cài đầu, các chức năng phân tích chạy offline; API dịch mã và cập nhật source tham khảo vẫn cần kết nối tương ứng. Khi cập nhật source, chạy `git pull`; nếu dependency thay đổi thì chạy lại Setup. Các archive được giữ trong `tools/runtime-cache/` để cài lại không phải tải lại.
+
+Nếu chuyển thư mục app sang đường dẫn khác, chạy lại `Setup.bat` để cập nhật môi trường Python.
+
+Source ở Git; binary nặng ở **[GitHub Releases](https://github.com/daothdat10/ToolDucAPK/releases)**. `tools/`, APK, job và kết quả giải mã không được commit. Xem [THIRD_PARTY.md](THIRD_PARTY.md) để biết thành phần và source snapshot của tool tùy chỉnh.
+
+### Dùng bộ công cụ có sẵn
+
+Mặc định tool tự tìm runtime trong repo. Có thể sao chép `tool_paths.example.json` thành `tool_paths.json` rồi sửa đường dẫn; file cấu hình cá nhân được Git bỏ qua. Biến môi trường `DUCAPK_GHIDRA`, `DUCAPK_JAVA_HOME`, `DUCAPK_DOTNET`, `DUCAPK_CPP2IL`, `DUCAPK_IL2CPP_DIR`, `DUCAPK_JADX` ưu tiên cao hơn cấu hình file. Máy hiện tại vẫn dùng được các bản Ghidra/JDK đã có nếu chưa cài bộ portable.
+
+Kiểm tra bộ công cụ bằng `.venv\Scripts\python.exe -m ducapk.toolchain`. Chạy CLI và test bằng Python trong `.venv`, ví dụ `.venv\Scripts\python.exe cli.py --help`.
+
+### Cài offline hoặc tải trước
+
+Tải đủ ba archive được liệt kê trong `runtime-manifest.json` từ Release, đặt chung trong một thư mục, rồi chạy `Setup.bat -CacheDirectory "D:\RuntimeCache"`. Setup vẫn xác minh checksum và cài Python dependencies hoàn toàn từ wheel đi kèm. Không cần tải archive source snapshot để chạy app. Có thể dùng `Setup.bat -Force` để giải nén lại runtime.
 
 ## 01 Phân tích APK
 

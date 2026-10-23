@@ -1,0 +1,2890 @@
+{
+  "schema_version": "1.0",
+  "title": "DucAPK Knowledge Graph",
+  "snapshot_date": "2026-10-16",
+  "scope": "Architecture, capabilities, inputs, outputs and constraints of the current source tree; excludes APK-specific recovered data.",
+  "curation": "Source-backed curated facts; updating the builder timestamp alone does not refresh facts.",
+  "verification": "Source inspection only; does not certify live external tool or API availability.",
+  "directed": true,
+  "predicate_labels": {
+    "has_interface": "có giao diện",
+    "has_module": "có module",
+    "invokes": "gọi",
+    "exposes": "cung cấp",
+    "implements": "triển khai",
+    "consumes": "đọc đầu vào",
+    "extracts": "trích xuất",
+    "uses": "sử dụng",
+    "produces": "tạo ra",
+    "fallback_to": "chuyển sang khi không phù hợp",
+    "updates": "cập nhật",
+    "classifies": "phân nhóm",
+    "runs": "chạy script",
+    "supports": "hỗ trợ định dạng",
+    "enriches": "làm giàu dữ liệu",
+    "constrained_by": "chịu giới hạn",
+    "requires": "cần"
+  },
+  "sources": [
+    {
+      "file": "README.md",
+      "sha256": "7d7fafb21d6fc172e86184f455b7e919f4e452a4c0bff2f2376eaa8cd31b31f1"
+    },
+    {
+      "file": "app.py",
+      "sha256": "ac7ca6259dc7428670ee206386e66c48e0e5d3a037959e473017f8bea4db1724"
+    },
+    {
+      "file": "cli.py",
+      "sha256": "9497f734de5cb7063e9c0b0d0b4532f306f8b422e94aced28b60687671680c5e"
+    },
+    {
+      "file": "ducapk/api_translation.py",
+      "sha256": "ab4cc3e049828ea7830b534a7de896f3f03c7aff95731cbe077ea40abd6d23ec"
+    },
+    {
+      "file": "ducapk/archive.py",
+      "sha256": "b153251f865d59cc5a22d259649c883b9d6db40e00f48be5e35757d9b039052a"
+    },
+    {
+      "file": "ducapk/categories.py",
+      "sha256": "c413efa8dbc2098cd6f356b65df4dffc4b7a44e5796911dcbbda0f720e7501f9"
+    },
+    {
+      "file": "ducapk/csharp_export.py",
+      "sha256": "2a96ca555e250065e0baa2a72aba10d714e075a8c1cada84d747487030ac6f26"
+    },
+    {
+      "file": "ducapk/ghidra_knowledge.py",
+      "sha256": "958c4d324ff129abc987b73545a4d73095dd829ebcafede22916ee9b4579a242"
+    },
+    {
+      "file": "ducapk/knowledge_view.py",
+      "sha256": "1cb8564d874ca8c617ec2935563fad3064241f7d3639ccc8c275bd9b8ffcbfc5"
+    },
+    {
+      "file": "ducapk/levels.py",
+      "sha256": "e7211401a2c8098aabd6345264b33f1f09274f674c08bdef1fe4b06d7551d646"
+    },
+    {
+      "file": "ducapk/metadata.py",
+      "sha256": "c038a3bdf99efb000321582bb25a0515ef70dc8cd00860ad28a1a2e8b4b6a00b"
+    },
+    {
+      "file": "ducapk/runner.py",
+      "sha256": "3a8ec45fc3ac02d32cb8650237d52cfb47ba33330a430acf718368877bb52326"
+    },
+    {
+      "file": "scripts/DucAPKDecompile.java",
+      "sha256": "aef94512a3b2d68a1a214a6262ac75200f339060c2930a22d988b315bb28e0fe"
+    },
+    {
+      "file": "scripts/build_knowledge_graph.py",
+      "sha256": "596b8a259562ce2d0b58371561ecfa4df0fdde10baedafd69b076a44d404061a"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "ducapk",
+      "label": "DucAPK",
+      "type": "application",
+      "description": "Công cụ Windows phân tích APK Android, trích metadata/level và chuyển mã tham chiếu C#.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "gui",
+      "label": "Giao diện desktop",
+      "type": "interface",
+      "description": "TkinterDnD; bốn tab Phân tích, Duyệt mã, API dịch mã, Kho tri thức; worker nền và hàng đợi sự kiện.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "cli",
+      "label": "Command line",
+      "type": "interface",
+      "description": "Nhận APK hoặc --resume; chọn nhóm, metadata-only và bật/tắt trích level. CLI hiện chưa có lệnh dịch API.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "cli.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "runner",
+      "label": "Điều phối phân tích",
+      "type": "module",
+      "description": "Tạo/tiếp tục job, chọn parser, chạy decompiler và tổng hợp kết quả.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "archive",
+      "label": "Đọc gói APK",
+      "type": "module",
+      "description": "Bung container/split, chọn cặp native binary và metadata; ưu tiên arm64-v8a.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/archive.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "metadata",
+      "label": "Lập chỉ mục metadata",
+      "type": "module",
+      "description": "Đối chiếu class, method, signature, RVA; giữ cả khai báo không có địa chỉ native.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/metadata.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "categories",
+      "label": "Phân nhóm class",
+      "type": "module",
+      "description": "Phân loại theo namespace; namespace không nhận diện thuộc nhóm game.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/categories.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "levels",
+      "label": "Trích dữ liệu level",
+      "type": "module",
+      "description": "Đọc bundles/TextAsset, các codec và schema được hỗ trợ; làm giàu mechanic bằng enum metadata.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "offline",
+      "label": "Dịch C → C# offline",
+      "type": "module",
+      "description": "Chuyển các mẫu pseudocode phổ biến sang unsafe C# tham chiếu và ghi cảnh báo phần chưa liên kết.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/csharp_export.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "label": "Dịch mã bằng API",
+      "type": "module",
+      "description": "Dịch C sang C# hoặc hoàn thiện C# decompile qua Chat Completions tương thích OpenAI.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "analyze",
+      "label": "Phân tích APK",
+      "type": "capability",
+      "description": "Điều phối luồng IL2CPP/DEX; có thể lấy thêm Java ở job Unity.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "browse",
+      "label": "Duyệt class / method",
+      "type": "capability",
+      "description": "Đọc SQLite, tìm class và hiển thị chữ ký/RVA/trạng thái/pseudocode.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 1553,
+          "symbol": "_method_selected"
+        }
+      ]
+    },
+    {
+      "id": "resume",
+      "label": "Tiếp tục job",
+      "type": "capability",
+      "description": "Đọc cấu hình và đầu vào job cũ, giữ nhóm đã chọn, tận dụng kết quả đã có.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "retry",
+      "label": "Thử lại hàm lỗi",
+      "type": "capability",
+      "description": "Chỉ chạy lại hàm native thiếu thân; các timeout thử lại là 120 và 180 giây.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 786,
+          "symbol": "retry_failed_only"
+        }
+      ]
+    },
+    {
+      "id": "recover",
+      "label": "Khôi phục XOR metadata đã biết",
+      "type": "capability",
+      "description": "Hỗ trợ wrapper có khóa cố định được đánh dấu trong libil2cpp.so và biến thể Il2cppEncrtypt có khóa DWORD nhúng (kl 130–140); xác thực header/nội dung, ghi sidecar và giữ metadata gốc.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 50,
+          "symbol": "_metadata_path"
+        }
+      ]
+    },
+    {
+      "id": "scope",
+      "label": "Chọn phạm vi decompile",
+      "type": "capability",
+      "description": "Lập danh sách native method theo nhóm mà vẫn giữ metadata đầy đủ. Mặc định nhóm game.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 171,
+          "symbol": "_build_scope_manifest"
+        }
+      ]
+    },
+    {
+      "id": "batch",
+      "label": "Lưu native theo lô",
+      "type": "capability",
+      "description": "Ghidra xuất lô tối đa 1.000 phương thức; Python nhập kết quả và gom file theo class.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 642,
+          "symbol": "_run_ghidra"
+        }
+      ]
+    },
+    {
+      "id": "enum",
+      "label": "Ánh xạ mechanic từ enum",
+      "type": "capability",
+      "description": "Đối chiếu ID có ngữ nghĩa với enum metadata của APK; giữ ID gốc, không đoán khi thiếu/mơ hồ.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 501,
+          "symbol": "annotate_level_mechanics"
+        }
+      ]
+    },
+    {
+      "id": "api_test",
+      "label": "Kiểm tra API / model",
+      "type": "capability",
+      "description": "Gửi yêu cầu thử nhỏ, kiểm tra model trả nội dung; yêu cầu có thể tính phí.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 86,
+          "symbol": "test_connection"
+        }
+      ]
+    },
+    {
+      "id": "api_export",
+      "label": "Dịch lô C / C# qua API",
+      "type": "capability",
+      "description": "Đọc một file hoặc cây thư mục; từng file được xử lý độc lập, lưu cây kết quả riêng và báo cáo.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 146,
+          "symbol": "export_api"
+        }
+      ]
+    },
+    {
+      "id": "packages",
+      "label": "APK / XAPK / APKS / split",
+      "type": "input",
+      "description": "Các split phải cùng bản game; ZIP container và đầu vào binary/metadata rời cũng được đọc.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/archive.py",
+          "line": 44,
+          "symbol": "extract_il2cpp_pair"
+        }
+      ]
+    },
+    {
+      "id": "binary",
+      "label": "libil2cpp.so",
+      "type": "input",
+      "description": "Native binary chứa code IL2CPP; cần ghép với metadata của cùng bản.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/archive.py",
+          "line": 44,
+          "symbol": "extract_il2cpp_pair"
+        }
+      ]
+    },
+    {
+      "id": "metadata_dat",
+      "label": "global-metadata.dat",
+      "type": "input",
+      "description": "Tên class/method, chữ ký và metadata IL2CPP; parser cần đọc được định dạng.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 499,
+          "symbol": "_run_dumper"
+        }
+      ]
+    },
+    {
+      "id": "dex",
+      "label": "DEX Android",
+      "type": "input",
+      "description": "Bytecode Java/Kotlin trong APK; có thể tồn tại cùng IL2CPP.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 294,
+          "symbol": "_run_jadx"
+        }
+      ]
+    },
+    {
+      "id": "bundles",
+      "label": "Unity bundles / TextAsset",
+      "type": "input",
+      "description": "Asset/config trong gói; bundle mã hóa riêng cần codec tương ứng.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1202,
+          "symbol": "_bundle_asset_index"
+        }
+      ]
+    },
+    {
+      "id": "c_input",
+      "label": "File C / pseudocode",
+      "type": "input",
+      "description": "File .c UTF-8, có thể chứa pseudocode Ghidra, metadata comments và RVA.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 119,
+          "symbol": "translate_file"
+        }
+      ]
+    },
+    {
+      "id": "cs_input",
+      "label": "File C# decompile",
+      "type": "input",
+      "description": "File .cs UTF-8 được dùng làm đầu vào hoàn thiện cú pháp/khả năng đọc.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 119,
+          "symbol": "translate_file"
+        }
+      ]
+    },
+    {
+      "id": "il2cpp_core_workflow",
+      "label": "Quy trình lõi Unity IL2CPP",
+      "type": "capability",
+      "description": "Tri thức vận hành được job áp dụng: ghép libil2cpp.so với global-metadata.dat; chọn Il2CppDumper hoặc Cpp2IL theo phiên bản/kết quả parser; dùng Ghidra headless tạo pseudocode native từ RVA. Metadata/pseudocode không phải source C# gốc; metadata mã hóa tùy biến cần codec/khóa riêng.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "ghidra_csharp_knowledge",
+      "label": "Tri thức dịch pseudocode IL2CPP sang C#",
+      "type": "concept",
+      "description": "Prompt đang được áp dụng khi dịch file .c qua API: xem C là pseudocode native, giữ class/method/RVA, bảo toàn luồng điều khiển và phép toán có bằng chứng, giữ truy cập pointer/offset tường minh, không đoán gameplay/layout; vùng thiếu được ghi TODO/stub. Khuyến nghị kiểm tra bằng Roslyn nhưng tool chưa tự chạy compiler.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 119,
+          "symbol": "translate_file"
+        }
+      ]
+    },
+    {
+      "id": "dumper",
+      "label": "Il2CppDumper",
+      "type": "dependency",
+      "description": "Parser IL2CPP lấy script.json và dump.cs; khi không phù hợp có thể chuyển Cpp2IL.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 499,
+          "symbol": "_run_dumper"
+        }
+      ]
+    },
+    {
+      "id": "cpp2il",
+      "label": "Cpp2IL",
+      "type": "dependency",
+      "description": "Parser/ánh xạ thay thế; cần xác định phiên bản Unity và dùng .NET riêng của tool.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 468,
+          "symbol": "_run_cpp2il"
+        }
+      ]
+    },
+    {
+      "id": "ghidra",
+      "label": "Ghidra headless",
+      "type": "dependency",
+      "description": "Decompiler native được gọi qua analyzeHeadless; tạo pseudocode từ địa chỉ đã lập chỉ mục.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 557,
+          "symbol": "_headless"
+        }
+      ]
+    },
+    {
+      "id": "ghidra_script",
+      "label": "DucAPKDecompile.java",
+      "type": "dependency",
+      "description": "Script Ghidra đọc method manifest và xuất kết quả/trạng thái; tận dụng lô đã xử lý.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "scripts/DucAPKDecompile.java",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "jadx",
+      "label": "JADX",
+      "type": "dependency",
+      "description": "Decompiler DEX sang Java; fallback không thay thế phần IL2CPP bị lỗi.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 294,
+          "symbol": "_run_jadx"
+        }
+      ]
+    },
+    {
+      "id": "unitypy",
+      "label": "UnityPy",
+      "type": "dependency",
+      "description": "Đọc Unity assets và bundles để lấy TextAsset và dữ liệu object.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1202,
+          "symbol": "_bundle_asset_index"
+        }
+      ]
+    },
+    {
+      "id": "crypto",
+      "label": "PyCryptodome",
+      "type": "dependency",
+      "description": "Giải mã AES-CBC cho PackageManifest YooAsset theo định dạng được hỗ trợ.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1014,
+          "symbol": "_decrypt_package_manifest"
+        }
+      ]
+    },
+    {
+      "id": "dotnet",
+      "label": ".NET runtime riêng",
+      "type": "dependency",
+      "description": "tools/dotnet/dotnet.exe chạy Cpp2IL.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 468,
+          "symbol": "_run_cpp2il"
+        }
+      ]
+    },
+    {
+      "id": "llm",
+      "label": "API model bên ngoài / local",
+      "type": "dependency",
+      "description": "POST Chat Completions với model, messages, stream=false; dùng Base URL do người dùng nhập.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 52,
+          "symbol": "complete"
+        }
+      ]
+    },
+    {
+      "id": "job",
+      "label": "Job / job.json",
+      "type": "artifact",
+      "description": "Một phiên phân tích: đầu vào, lựa chọn nhóm, backend, trạng thái và báo cáo; dùng cho resume.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 254,
+          "symbol": "_state"
+        }
+      ]
+    },
+    {
+      "id": "sqlite",
+      "label": "methods.sqlite",
+      "type": "artifact",
+      "description": "Các bảng methods, selected_methods, results liên kết metadata, phạm vi và pseudocode/trạng thái.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 846,
+          "symbol": "_collect_results"
+        }
+      ]
+    },
+    {
+      "id": "class_index",
+      "label": "class_index.csv",
+      "type": "artifact",
+      "description": "Mục lục class tạo từ metadata.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/metadata.py",
+          "line": 97,
+          "symbol": "build_metadata_index"
+        }
+      ]
+    },
+    {
+      "id": "class_meta",
+      "label": "classes_metadata/",
+      "type": "artifact",
+      "description": "Khai báo class/method/signature/RVA; method không ánh xạ được vẫn được giữ.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/metadata.py",
+          "line": 97,
+          "symbol": "build_metadata_index"
+        }
+      ]
+    },
+    {
+      "id": "manifest",
+      "label": "methods.tsv / selected.tsv",
+      "type": "artifact",
+      "description": "Danh sách method và phạm vi native cần Ghidra xử lý.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 171,
+          "symbol": "_build_scope_manifest"
+        }
+      ]
+    },
+    {
+      "id": "c_output",
+      "label": "classes_c/",
+      "type": "artifact",
+      "description": "Pseudocode chia thành game_logic, unity_dotnet và third_party_sdk.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 846,
+          "symbol": "_collect_results"
+        }
+      ]
+    },
+    {
+      "id": "dump",
+      "label": "dump.cs / method map",
+      "type": "artifact",
+      "description": "dump.cs là khai báo metadata; Cpp2IL cung cấp bảng ánh xạ method thay thế.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 499,
+          "symbol": "_run_dumper"
+        }
+      ]
+    },
+    {
+      "id": "java_output",
+      "label": "java_source/sources/",
+      "type": "artifact",
+      "description": "Mã Java decompile từ DEX qua JADX.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 294,
+          "symbol": "_run_jadx"
+        }
+      ]
+    },
+    {
+      "id": "level_output",
+      "label": "levels/ + levels.json",
+      "type": "artifact",
+      "description": "JSON từng level và manifest nguồn/lỗi/bundle/pack/mechanic.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1531,
+          "symbol": "extract_level_json"
+        }
+      ]
+    },
+    {
+      "id": "analysis_report",
+      "label": "report.json / failed_functions.json",
+      "type": "artifact",
+      "description": "Số hàm có/thiếu thân, lỗi decompile và thông tin cần retry.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 846,
+          "symbol": "_collect_results"
+        }
+      ]
+    },
+    {
+      "id": "log",
+      "label": "activity.log",
+      "type": "artifact",
+      "description": "Nhật ký phân tích và tiến độ theo thời gian.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 266,
+          "symbol": "_job_logger"
+        }
+      ]
+    },
+    {
+      "id": "project",
+      "label": "DucAPK.gpr",
+      "type": "artifact",
+      "description": "Project Ghidra riêng dưới projects/job_<mã>/.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 425,
+          "symbol": "_project_dir"
+        }
+      ]
+    },
+    {
+      "id": "offline_output",
+      "label": "C# offline + report",
+      "type": "artifact",
+      "description": "Cây .cs tham chiếu và translation_report.json ghi stub/cảnh báo.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/csharp_export.py",
+          "line": 413,
+          "symbol": "export_c_tree"
+        }
+      ]
+    },
+    {
+      "id": "api_output",
+      "label": "C# API + report",
+      "type": "artifact",
+      "description": "Cây .cs riêng và api_translation_report.json; status needs_review, compiled=false.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 146,
+          "symbol": "export_api"
+        }
+      ]
+    },
+    {
+      "id": "game",
+      "label": "Logic game",
+      "type": "concept",
+      "description": "Nhóm mặc định; namespace chưa được nhận diện cũng thuộc nhóm này.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/categories.py",
+          "line": 47,
+          "symbol": "category_for_class"
+        }
+      ]
+    },
+    {
+      "id": "unity",
+      "label": "Unity / .NET",
+      "type": "concept",
+      "description": "Nhóm class framework được phân loại theo namespace.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/categories.py",
+          "line": 47,
+          "symbol": "category_for_class"
+        }
+      ]
+    },
+    {
+      "id": "sdk",
+      "label": "SDK bên thứ ba",
+      "type": "concept",
+      "description": "Nhóm SDK/thư viện được nhận diện theo các prefix đã cấu hình.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/categories.py",
+          "line": 47,
+          "symbol": "category_for_class"
+        }
+      ]
+    },
+    {
+      "id": "hdpk",
+      "label": "Codec HDPK",
+      "type": "concept",
+      "description": "Đọc bảng offset và xuất bản ghi JSON level theo schema đã hỗ trợ.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 856,
+          "symbol": "_unpack_hdpk_pack"
+        }
+      ]
+    },
+    {
+      "id": "msgpack",
+      "label": "Codec MessagePack puzzle",
+      "type": "concept",
+      "description": "Bộ unpack và nhận diện cấu trúc puzzle được hỗ trợ.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 772,
+          "symbol": "_unpack_msgpack"
+        }
+      ]
+    },
+    {
+      "id": "juicetime",
+      "label": "Schema JuiceTime",
+      "type": "concept",
+      "description": "Nhận diện và bung payload level thành nhóm/xiên/màu/trạng thái; giữ chuỗi thô.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 74,
+          "symbol": "_parse_juicetime_level_payload"
+        }
+      ]
+    },
+    {
+      "id": "yooasset",
+      "label": "PackageManifest / BundleStream",
+      "type": "concept",
+      "description": "Ánh xạ tên bundle, giải mã manifest và đảo biến đổi bundle theo format đã biết.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1108,
+          "symbol": "_decrypt_bundle_stream"
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "label": "C# cần rà soát / compile",
+      "type": "constraint",
+      "description": "Pseudocode và C# tái dựng không được bảo đảm là source gốc hay tương đương; có TODO/stub.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "local",
+      "label": "Phân tích chạy local",
+      "type": "constraint",
+      "description": "Phân tích và dịch offline chạy trên máy; tool không tự tải APK lên API.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "api_boundary",
+      "label": "Gửi file khi bấm dịch API",
+      "type": "constraint",
+      "description": "Chỉ gửi nội dung file C/C# đã chọn; có thể tính phí, xử lý độc lập mỗi file, tối đa 240.000 byte UTF-8.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 119,
+          "symbol": "translate_file"
+        }
+      ]
+    },
+    {
+      "id": "api_key",
+      "label": "API Key trong phiên",
+      "type": "constraint",
+      "description": "Key được che; có thể đọc DUCAPK_API_KEY, không ghi trong báo cáo; không chuyển tiếp credential qua redirect.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 680,
+          "symbol": "_build_api_ui"
+        }
+      ]
+    },
+    {
+      "id": "api_safety",
+      "label": "Kiểm tra phản hồi API",
+      "type": "constraint",
+      "description": "Từ chối đầu ra bị cắt/chặn/sai định dạng; dừng lô khi lỗi kết nối/key/quota; HTTPS từ xa, HTTP localhost.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 52,
+          "symbol": "complete"
+        }
+      ]
+    },
+    {
+      "id": "limits",
+      "label": "Giới hạn parser / codec",
+      "type": "constraint",
+      "description": "Không có bộ giải mã chung cho mọi APK/metadata/bundle; tên đã obfuscate và logic thiếu không tự khôi phục.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "knowledge_view",
+      "label": "Trình xem Knowledge Graph",
+      "type": "module",
+      "description": "Tab desktop native: tìm thực thể, chọn nút lân cận, xem quan hệ có hướng và căn cứ source; đọc JSON local.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/knowledge_view.py",
+          "line": 18,
+          "symbol": "KnowledgeGraphView"
+        }
+      ]
+    },
+    {
+      "id": "explore_graph",
+      "label": "Khám phá tri thức tool",
+      "type": "capability",
+      "description": "Chọn thực thể trong danh sách hoặc graph, xem quan hệ đi vào/đi ra, mô tả và file/dòng căn cứ; tải lại dữ liệu.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/knowledge_view.py",
+          "line": 119,
+          "symbol": "show_entity"
+        }
+      ]
+    },
+    {
+      "id": "ghidra_source_view",
+      "label": "Tra cứu source Ghidra",
+      "type": "module",
+      "description": "Giao diện tìm source Ghidra đã đồng bộ, hiển thị đường dẫn, dòng và đoạn mã khớp.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/ghidra_knowledge.py",
+          "line": 206,
+          "symbol": "GhidraSourceView"
+        }
+      ]
+    },
+    {
+      "id": "sync_ghidra_source",
+      "label": "Cập nhật kiến thức Ghidra",
+      "type": "capability",
+      "description": "Đồng bộ sparse checkout các module source chính thức từ GitHub và dựng lại chỉ mục SQLite FTS5 trong worker nền.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/ghidra_knowledge.py",
+          "line": 133,
+          "symbol": "update_ghidra_knowledge"
+        }
+      ]
+    },
+    {
+      "id": "search_ghidra_source",
+      "label": "Tìm trong source Ghidra",
+      "type": "capability",
+      "description": "Tìm từ khóa trong source đã lập chỉ mục và trả về file, dòng cùng đoạn trích.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/ghidra_knowledge.py",
+          "line": 181,
+          "symbol": "search_ghidra_source"
+        }
+      ]
+    },
+    {
+      "id": "graph_data",
+      "label": "Knowledge Graph JSON",
+      "type": "artifact",
+      "description": "knowledge/ducapk_knowledge_graph.json: thực thể, quan hệ có hướng, nhãn quan hệ, evidence và SHA-256 của source; snapshot biên tập về tool.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "scripts/build_knowledge_graph.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "graph_builder",
+      "label": "Dựng snapshot tri thức",
+      "type": "module",
+      "description": "Script biên tập facts, lấy dòng symbol bằng AST, kiểm tra ID/quan hệ và xuất graph JSON cùng bảng Markdown; cần rà facts khi source đổi.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "scripts/build_knowledge_graph.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "ghidra_source_checkout",
+      "label": "Checkout source Ghidra",
+      "type": "artifact",
+      "description": "knowledge/ghidra_upstream/: shallow/sparse checkout của repo chính thức, giới hạn vào các module được chọn.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/ghidra_knowledge.py",
+          "line": 133,
+          "symbol": "update_ghidra_knowledge"
+        }
+      ]
+    },
+    {
+      "id": "ghidra_source_index",
+      "label": "Chỉ mục source Ghidra",
+      "type": "artifact",
+      "description": "knowledge/ghidra_source_index.sqlite3: nội dung source văn bản và metadata commit dùng cho truy vấn FTS5.",
+      "properties": {},
+      "evidence": [
+        {
+          "file": "ducapk/ghidra_knowledge.py",
+          "line": 66,
+          "symbol": "_create_index"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "r001",
+      "source": "ducapk",
+      "predicate": "has_interface",
+      "target": "gui",
+      "note": "",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r002",
+      "source": "ducapk",
+      "predicate": "has_interface",
+      "target": "cli",
+      "note": "",
+      "evidence": [
+        {
+          "file": "cli.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r003",
+      "source": "ducapk",
+      "predicate": "has_module",
+      "target": "runner",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r004",
+      "source": "ducapk",
+      "predicate": "has_module",
+      "target": "archive",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/archive.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r005",
+      "source": "ducapk",
+      "predicate": "has_module",
+      "target": "metadata",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/metadata.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r006",
+      "source": "ducapk",
+      "predicate": "has_module",
+      "target": "categories",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/categories.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r007",
+      "source": "ducapk",
+      "predicate": "has_module",
+      "target": "levels",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r008",
+      "source": "ducapk",
+      "predicate": "has_module",
+      "target": "offline",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/csharp_export.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r009",
+      "source": "ducapk",
+      "predicate": "has_module",
+      "target": "api",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r010",
+      "source": "ducapk",
+      "predicate": "has_module",
+      "target": "knowledge_view",
+      "note": "",
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r011",
+      "source": "ducapk",
+      "predicate": "has_module",
+      "target": "graph_builder",
+      "note": "",
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r012",
+      "source": "ducapk",
+      "predicate": "has_module",
+      "target": "ghidra_source_view",
+      "note": "",
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r013",
+      "source": "gui",
+      "predicate": "exposes",
+      "target": "explore_graph",
+      "note": "",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 222,
+          "symbol": "_build_ui"
+        }
+      ]
+    },
+    {
+      "id": "r014",
+      "source": "knowledge_view",
+      "predicate": "implements",
+      "target": "explore_graph",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/knowledge_view.py",
+          "line": 18,
+          "symbol": "KnowledgeGraphView"
+        }
+      ]
+    },
+    {
+      "id": "r015",
+      "source": "knowledge_view",
+      "predicate": "consumes",
+      "target": "graph_data",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/knowledge_view.py",
+          "line": 18,
+          "symbol": "KnowledgeGraphView"
+        }
+      ]
+    },
+    {
+      "id": "r016",
+      "source": "explore_graph",
+      "predicate": "consumes",
+      "target": "graph_data",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/knowledge_view.py",
+          "line": 119,
+          "symbol": "show_entity"
+        }
+      ]
+    },
+    {
+      "id": "r017",
+      "source": "graph_builder",
+      "predicate": "produces",
+      "target": "graph_data",
+      "note": "",
+      "evidence": [
+        {
+          "file": "scripts/build_knowledge_graph.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r018",
+      "source": "gui",
+      "predicate": "exposes",
+      "target": "sync_ghidra_source",
+      "note": "",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 222,
+          "symbol": "_build_ui"
+        }
+      ]
+    },
+    {
+      "id": "r019",
+      "source": "gui",
+      "predicate": "exposes",
+      "target": "search_ghidra_source",
+      "note": "",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 222,
+          "symbol": "_build_ui"
+        }
+      ]
+    },
+    {
+      "id": "r020",
+      "source": "ghidra_source_view",
+      "predicate": "implements",
+      "target": "sync_ghidra_source",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/ghidra_knowledge.py",
+          "line": 206,
+          "symbol": "GhidraSourceView"
+        }
+      ]
+    },
+    {
+      "id": "r021",
+      "source": "ghidra_source_view",
+      "predicate": "implements",
+      "target": "search_ghidra_source",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/ghidra_knowledge.py",
+          "line": 206,
+          "symbol": "GhidraSourceView"
+        }
+      ]
+    },
+    {
+      "id": "r022",
+      "source": "sync_ghidra_source",
+      "predicate": "updates",
+      "target": "ghidra_source_checkout",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/ghidra_knowledge.py",
+          "line": 133,
+          "symbol": "update_ghidra_knowledge"
+        }
+      ]
+    },
+    {
+      "id": "r023",
+      "source": "sync_ghidra_source",
+      "predicate": "produces",
+      "target": "ghidra_source_index",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/ghidra_knowledge.py",
+          "line": 133,
+          "symbol": "update_ghidra_knowledge"
+        }
+      ]
+    },
+    {
+      "id": "r024",
+      "source": "search_ghidra_source",
+      "predicate": "consumes",
+      "target": "ghidra_source_index",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/ghidra_knowledge.py",
+          "line": 181,
+          "symbol": "search_ghidra_source"
+        }
+      ]
+    },
+    {
+      "id": "r025",
+      "source": "gui",
+      "predicate": "invokes",
+      "target": "analyze",
+      "note": "",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 222,
+          "symbol": "_build_ui"
+        }
+      ]
+    },
+    {
+      "id": "r026",
+      "source": "cli",
+      "predicate": "invokes",
+      "target": "analyze",
+      "note": "",
+      "evidence": [
+        {
+          "file": "cli.py",
+          "line": 12,
+          "symbol": "main"
+        }
+      ]
+    },
+    {
+      "id": "r027",
+      "source": "gui",
+      "predicate": "exposes",
+      "target": "browse",
+      "note": "",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 222,
+          "symbol": "_build_ui"
+        }
+      ]
+    },
+    {
+      "id": "r028",
+      "source": "gui",
+      "predicate": "exposes",
+      "target": "api",
+      "note": "",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 222,
+          "symbol": "_build_ui"
+        }
+      ]
+    },
+    {
+      "id": "r029",
+      "source": "gui",
+      "predicate": "exposes",
+      "target": "offline",
+      "note": "",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 222,
+          "symbol": "_build_ui"
+        }
+      ]
+    },
+    {
+      "id": "r030",
+      "source": "gui",
+      "predicate": "exposes",
+      "target": "resume",
+      "note": "",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 222,
+          "symbol": "_build_ui"
+        }
+      ]
+    },
+    {
+      "id": "r031",
+      "source": "cli",
+      "predicate": "exposes",
+      "target": "resume",
+      "note": "",
+      "evidence": [
+        {
+          "file": "cli.py",
+          "line": 12,
+          "symbol": "main"
+        }
+      ]
+    },
+    {
+      "id": "r032",
+      "source": "gui",
+      "predicate": "exposes",
+      "target": "retry",
+      "note": "",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 222,
+          "symbol": "_build_ui"
+        }
+      ]
+    },
+    {
+      "id": "r033",
+      "source": "runner",
+      "predicate": "implements",
+      "target": "analyze",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r034",
+      "source": "runner",
+      "predicate": "implements",
+      "target": "resume",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r035",
+      "source": "runner",
+      "predicate": "implements",
+      "target": "retry",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r036",
+      "source": "runner",
+      "predicate": "implements",
+      "target": "recover",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r037",
+      "source": "runner",
+      "predicate": "implements",
+      "target": "scope",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r038",
+      "source": "runner",
+      "predicate": "implements",
+      "target": "batch",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r039",
+      "source": "analyze",
+      "predicate": "uses",
+      "target": "il2cpp_core_workflow",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "r040",
+      "source": "il2cpp_core_workflow",
+      "predicate": "invokes",
+      "target": "dumper",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "r041",
+      "source": "il2cpp_core_workflow",
+      "predicate": "fallback_to",
+      "target": "cpp2il",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "r042",
+      "source": "il2cpp_core_workflow",
+      "predicate": "invokes",
+      "target": "ghidra",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "r043",
+      "source": "analyze",
+      "predicate": "invokes",
+      "target": "archive",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "r044",
+      "source": "analyze",
+      "predicate": "invokes",
+      "target": "metadata",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "r045",
+      "source": "analyze",
+      "predicate": "invokes",
+      "target": "levels",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "r046",
+      "source": "analyze",
+      "predicate": "invokes",
+      "target": "scope",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "r047",
+      "source": "analyze",
+      "predicate": "invokes",
+      "target": "batch",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "r048",
+      "source": "analyze",
+      "predicate": "invokes",
+      "target": "retry",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "r049",
+      "source": "archive",
+      "predicate": "consumes",
+      "target": "packages",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/archive.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r050",
+      "source": "archive",
+      "predicate": "extracts",
+      "target": "binary",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/archive.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r051",
+      "source": "archive",
+      "predicate": "extracts",
+      "target": "metadata_dat",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/archive.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r052",
+      "source": "runner",
+      "predicate": "invokes",
+      "target": "dumper",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r053",
+      "source": "runner",
+      "predicate": "invokes",
+      "target": "cpp2il",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r054",
+      "source": "runner",
+      "predicate": "invokes",
+      "target": "jadx",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r055",
+      "source": "dumper",
+      "predicate": "fallback_to",
+      "target": "cpp2il",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 499,
+          "symbol": "_run_dumper"
+        }
+      ]
+    },
+    {
+      "id": "r056",
+      "source": "cpp2il",
+      "predicate": "uses",
+      "target": "dotnet",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 468,
+          "symbol": "_run_cpp2il"
+        }
+      ]
+    },
+    {
+      "id": "r057",
+      "source": "dumper",
+      "predicate": "consumes",
+      "target": "binary",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 499,
+          "symbol": "_run_dumper"
+        }
+      ]
+    },
+    {
+      "id": "r058",
+      "source": "dumper",
+      "predicate": "consumes",
+      "target": "metadata_dat",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 499,
+          "symbol": "_run_dumper"
+        }
+      ]
+    },
+    {
+      "id": "r059",
+      "source": "cpp2il",
+      "predicate": "consumes",
+      "target": "binary",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 468,
+          "symbol": "_run_cpp2il"
+        }
+      ]
+    },
+    {
+      "id": "r060",
+      "source": "cpp2il",
+      "predicate": "consumes",
+      "target": "metadata_dat",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 468,
+          "symbol": "_run_cpp2il"
+        }
+      ]
+    },
+    {
+      "id": "r061",
+      "source": "dumper",
+      "predicate": "produces",
+      "target": "dump",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 499,
+          "symbol": "_run_dumper"
+        }
+      ]
+    },
+    {
+      "id": "r062",
+      "source": "cpp2il",
+      "predicate": "produces",
+      "target": "dump",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 468,
+          "symbol": "_run_cpp2il"
+        }
+      ]
+    },
+    {
+      "id": "r063",
+      "source": "recover",
+      "predicate": "consumes",
+      "target": "metadata_dat",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 50,
+          "symbol": "_metadata_path"
+        }
+      ]
+    },
+    {
+      "id": "r064",
+      "source": "recover",
+      "predicate": "uses",
+      "target": "binary",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 50,
+          "symbol": "_metadata_path"
+        }
+      ]
+    },
+    {
+      "id": "r065",
+      "source": "metadata",
+      "predicate": "consumes",
+      "target": "dump",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/metadata.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r066",
+      "source": "metadata",
+      "predicate": "produces",
+      "target": "sqlite",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/metadata.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r067",
+      "source": "metadata",
+      "predicate": "produces",
+      "target": "class_meta",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/metadata.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r068",
+      "source": "metadata",
+      "predicate": "produces",
+      "target": "class_index",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/metadata.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r069",
+      "source": "metadata",
+      "predicate": "produces",
+      "target": "manifest",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/metadata.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r070",
+      "source": "scope",
+      "predicate": "uses",
+      "target": "categories",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 171,
+          "symbol": "_build_scope_manifest"
+        }
+      ]
+    },
+    {
+      "id": "r071",
+      "source": "scope",
+      "predicate": "consumes",
+      "target": "manifest",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 171,
+          "symbol": "_build_scope_manifest"
+        }
+      ]
+    },
+    {
+      "id": "r072",
+      "source": "scope",
+      "predicate": "updates",
+      "target": "sqlite",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 171,
+          "symbol": "_build_scope_manifest"
+        }
+      ]
+    },
+    {
+      "id": "r073",
+      "source": "categories",
+      "predicate": "classifies",
+      "target": "game",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/categories.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r074",
+      "source": "categories",
+      "predicate": "classifies",
+      "target": "unity",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/categories.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r075",
+      "source": "categories",
+      "predicate": "classifies",
+      "target": "sdk",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/categories.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r076",
+      "source": "batch",
+      "predicate": "invokes",
+      "target": "ghidra",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 642,
+          "symbol": "_run_ghidra"
+        }
+      ]
+    },
+    {
+      "id": "r077",
+      "source": "ghidra",
+      "predicate": "runs",
+      "target": "ghidra_script",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 557,
+          "symbol": "_headless"
+        }
+      ]
+    },
+    {
+      "id": "r078",
+      "source": "ghidra_script",
+      "predicate": "consumes",
+      "target": "manifest",
+      "note": "",
+      "evidence": [
+        {
+          "file": "scripts/DucAPKDecompile.java",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r079",
+      "source": "ghidra",
+      "predicate": "consumes",
+      "target": "binary",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 557,
+          "symbol": "_headless"
+        }
+      ]
+    },
+    {
+      "id": "r080",
+      "source": "batch",
+      "predicate": "updates",
+      "target": "sqlite",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 642,
+          "symbol": "_run_ghidra"
+        }
+      ]
+    },
+    {
+      "id": "r081",
+      "source": "runner",
+      "predicate": "produces",
+      "target": "c_output",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r082",
+      "source": "ghidra",
+      "predicate": "produces",
+      "target": "project",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 557,
+          "symbol": "_headless"
+        }
+      ]
+    },
+    {
+      "id": "r083",
+      "source": "runner",
+      "predicate": "produces",
+      "target": "analysis_report",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r084",
+      "source": "runner",
+      "predicate": "produces",
+      "target": "job",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r085",
+      "source": "runner",
+      "predicate": "produces",
+      "target": "log",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r086",
+      "source": "resume",
+      "predicate": "consumes",
+      "target": "job",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "r087",
+      "source": "retry",
+      "predicate": "consumes",
+      "target": "sqlite",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 786,
+          "symbol": "retry_failed_only"
+        }
+      ]
+    },
+    {
+      "id": "r088",
+      "source": "retry",
+      "predicate": "invokes",
+      "target": "ghidra",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 786,
+          "symbol": "retry_failed_only"
+        }
+      ]
+    },
+    {
+      "id": "r089",
+      "source": "retry",
+      "predicate": "updates",
+      "target": "c_output",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 786,
+          "symbol": "retry_failed_only"
+        }
+      ]
+    },
+    {
+      "id": "r090",
+      "source": "retry",
+      "predicate": "updates",
+      "target": "analysis_report",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 786,
+          "symbol": "retry_failed_only"
+        }
+      ]
+    },
+    {
+      "id": "r091",
+      "source": "browse",
+      "predicate": "consumes",
+      "target": "sqlite",
+      "note": "",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 1553,
+          "symbol": "_method_selected"
+        }
+      ]
+    },
+    {
+      "id": "r092",
+      "source": "jadx",
+      "predicate": "consumes",
+      "target": "dex",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 294,
+          "symbol": "_run_jadx"
+        }
+      ]
+    },
+    {
+      "id": "r093",
+      "source": "jadx",
+      "predicate": "produces",
+      "target": "java_output",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 294,
+          "symbol": "_run_jadx"
+        }
+      ]
+    },
+    {
+      "id": "r094",
+      "source": "levels",
+      "predicate": "consumes",
+      "target": "packages",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r095",
+      "source": "levels",
+      "predicate": "consumes",
+      "target": "bundles",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r096",
+      "source": "levels",
+      "predicate": "uses",
+      "target": "unitypy",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r097",
+      "source": "levels",
+      "predicate": "uses",
+      "target": "crypto",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r098",
+      "source": "levels",
+      "predicate": "supports",
+      "target": "hdpk",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r099",
+      "source": "levels",
+      "predicate": "supports",
+      "target": "msgpack",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r100",
+      "source": "levels",
+      "predicate": "supports",
+      "target": "juicetime",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r101",
+      "source": "levels",
+      "predicate": "supports",
+      "target": "yooasset",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r102",
+      "source": "levels",
+      "predicate": "implements",
+      "target": "enum",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r103",
+      "source": "enum",
+      "predicate": "consumes",
+      "target": "dump",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 501,
+          "symbol": "annotate_level_mechanics"
+        }
+      ]
+    },
+    {
+      "id": "r104",
+      "source": "enum",
+      "predicate": "enriches",
+      "target": "level_output",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 501,
+          "symbol": "annotate_level_mechanics"
+        }
+      ]
+    },
+    {
+      "id": "r105",
+      "source": "levels",
+      "predicate": "produces",
+      "target": "level_output",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/levels.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r106",
+      "source": "offline",
+      "predicate": "consumes",
+      "target": "c_input",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/csharp_export.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r107",
+      "source": "offline",
+      "predicate": "consumes",
+      "target": "c_output",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/csharp_export.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r108",
+      "source": "offline",
+      "predicate": "produces",
+      "target": "offline_output",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/csharp_export.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r109",
+      "source": "api",
+      "predicate": "implements",
+      "target": "api_test",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r110",
+      "source": "api",
+      "predicate": "implements",
+      "target": "api_export",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r111",
+      "source": "api_test",
+      "predicate": "invokes",
+      "target": "llm",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 86,
+          "symbol": "test_connection"
+        }
+      ]
+    },
+    {
+      "id": "r112",
+      "source": "api_export",
+      "predicate": "invokes",
+      "target": "llm",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 146,
+          "symbol": "export_api"
+        }
+      ]
+    },
+    {
+      "id": "r113",
+      "source": "api_export",
+      "predicate": "uses",
+      "target": "ghidra_csharp_knowledge",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 146,
+          "symbol": "export_api"
+        }
+      ]
+    },
+    {
+      "id": "r114",
+      "source": "api_export",
+      "predicate": "consumes",
+      "target": "c_input",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 146,
+          "symbol": "export_api"
+        }
+      ]
+    },
+    {
+      "id": "r115",
+      "source": "api_export",
+      "predicate": "consumes",
+      "target": "cs_input",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 146,
+          "symbol": "export_api"
+        }
+      ]
+    },
+    {
+      "id": "r116",
+      "source": "api_export",
+      "predicate": "consumes",
+      "target": "c_output",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 146,
+          "symbol": "export_api"
+        }
+      ]
+    },
+    {
+      "id": "r117",
+      "source": "api_export",
+      "predicate": "produces",
+      "target": "api_output",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 146,
+          "symbol": "export_api"
+        }
+      ]
+    },
+    {
+      "id": "r118",
+      "source": "api",
+      "predicate": "constrained_by",
+      "target": "api_boundary",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r119",
+      "source": "api",
+      "predicate": "constrained_by",
+      "target": "api_key",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r120",
+      "source": "api",
+      "predicate": "constrained_by",
+      "target": "api_safety",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r121",
+      "source": "api_output",
+      "predicate": "requires",
+      "target": "review",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/api_translation.py",
+          "line": 146,
+          "symbol": "export_api"
+        }
+      ]
+    },
+    {
+      "id": "r122",
+      "source": "offline_output",
+      "predicate": "requires",
+      "target": "review",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/csharp_export.py",
+          "line": 413,
+          "symbol": "export_c_tree"
+        }
+      ]
+    },
+    {
+      "id": "r123",
+      "source": "c_output",
+      "predicate": "requires",
+      "target": "review",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 846,
+          "symbol": "_collect_results"
+        }
+      ]
+    },
+    {
+      "id": "r124",
+      "source": "ducapk",
+      "predicate": "constrained_by",
+      "target": "limits",
+      "note": "",
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    },
+    {
+      "id": "r125",
+      "source": "analyze",
+      "predicate": "constrained_by",
+      "target": "local",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/runner.py",
+          "line": 1050,
+          "symbol": "analyze"
+        }
+      ]
+    },
+    {
+      "id": "r126",
+      "source": "offline",
+      "predicate": "constrained_by",
+      "target": "local",
+      "note": "",
+      "evidence": [
+        {
+          "file": "ducapk/csharp_export.py",
+          "line": 1,
+          "symbol": null
+        }
+      ]
+    }
+  ]
+}

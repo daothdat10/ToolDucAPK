@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "release_tag": "runtime-win-x64-20261023",
+  "platform": "windows-x64",
+  "python_version": "3.12.10",
+  "assets": [
+    {
+      "name": "ducapk-runtime-win-x64-20261023.zip",
+      "url": "https://github.com/daothdat10/ToolDucAPK/releases/download/runtime-win-x64-20261023/ducapk-runtime-win-x64-20261023.zip",
+      "sha256": "3566ba851722ae7b22669df3f29da08d238b0678662df7cb382427e12645b12b",
+      "size": 218718421,
+      "unpack_to": ".",
+      "required": [
+        "tools/python/python.exe",
+        "tools/python/pythonw.exe",
+        "tools/python/Lib/venv/__init__.py",
+        "tools/Il2CppDumper/Il2CppDumper.exe",
+        "tools/Cpp2IL/Cpp2IL.dll",
+        "tools/dotnet/dotnet.exe",
+        "tools/jadx/bin/jadx.bat",
+        "tools/wheels"
+      ]
+    },
+    {
+      "name": "ghidra_12.1.4_PUBLIC_20260921.zip",
+      "url": "https://github.com/daothdat10/ToolDucAPK/releases/download/runtime-win-x64-20261023/ghidra_12.1.4_PUBLIC_20260921.zip",
+      "sha256": "ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db",
+      "size": 569649598,
+      "unpack_to": "tools/ghidra",
+      "required": [
+        "tools/ghidra/ghidra_12.1.4_PUBLIC/support/analyzeHeadless.bat"
+      ]
+    },
+    {
+      "name": "OpenJDK25U-jdk_x64_windows_hotspot_25.0.4.1_1.zip",
+      "url": "https://github.com/daothdat10/ToolDucAPK/releases/download/runtime-win-x64-20261023/OpenJDK25U-jdk_x64_windows_hotspot_25.0.4.1_1.zip",
+      "sha256": "00c847d804f4a78e9f04f2683faf14fed898535b177b7fc704486cb0284e9283",
+      "size": 141167264,
+      "unpack_to": "tools/jdk",
+      "required": [
+        "tools/jdk/jdk-25.0.4.1+1/bin/java.exe"
+      ]
+    }
+  ],
+  "source_snapshot": {
+    "name": "ducapk-tool-sources-runtime-win-x64-20261023.zip",
+    "url": "https://github.com/daothdat10/ToolDucAPK/releases/download/runtime-win-x64-20261023/ducapk-tool-sources-runtime-win-x64-20261023.zip",
+    "sha256": "a5cdcd0cd9c9101060ff0fa41f9e0f229f47514df503335da7c12d2a0d5beab4"
+  }
+}

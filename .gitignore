@@ -28,3 +28,7 @@ venv/
 !.env.example
 /.claude/
 /.codex/
+/tool_paths.json
+/dist/
+/knowledge/ghidra_source_index.sqlite3*
+/_probe*.java

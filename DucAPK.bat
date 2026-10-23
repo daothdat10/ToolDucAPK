@@ -1,10 +1,11 @@
 @echo off
 setlocal
 set "PYTHONUTF8=1"
+set "PYTHONNOUSERSITE=1"
 cd /d "%~dp0"
-if not exist "C:\Users\XGame\AppData\Local\Programs\Python\Python312\pythonw.exe" (
-  echo Khong tim thay Python 3.12 tai duong dan da cai.
-  pause
-  exit /b 1
+if not exist ".venv\Scripts\pythonw.exe" (
+  echo Can cai dat runtime truoc khi mo DucAPK.
+  call "%~dp0Setup.bat"
+  if errorlevel 1 exit /b 1
 )
-start "" "C:\Users\XGame\AppData\Local\Programs\Python\Python312\pythonw.exe" "%~dp0app.py"
+start "" "%~dp0.venv\Scripts\pythonw.exe" "%~dp0app.py"
