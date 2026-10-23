@@ -1,0 +1,999 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Level Editor</title>
+<style>
+:root{
+  --bg:#0B1020;--side:#0E1428;--panel:#141B33;--surface:#1C2542;--border:#2A3558;
+  --text:#E6EAF5;--muted:#8D98B8;--sel:#26314F;--accent:#F472B6;--accent-2:#F9A8D4;
+  --green:#34D399;--sky:#38BDF8;--amber:#FBBF24;--rose:#F87171;--violet:#A78BFA;
+  --ink:#0B1020;--cell-empty:#0F1529;
+  --mono:Consolas,"Cascadia Mono",ui-monospace,monospace;--sans:"Segoe UI",system-ui,sans-serif;
+}
+:root[data-theme="light"]{
+  --bg:#F5F6FA;--side:#ECEEF5;--panel:#FFFFFF;--surface:#EEF0F7;--border:#D5D9E6;
+  --text:#161B2E;--muted:#5C6685;--sel:#E3E7F5;--accent:#DB2777;--accent-2:#BE185D;
+  --green:#059669;--sky:#0284C7;--amber:#B45309;--rose:#DC2626;--violet:#7C3AED;
+  --ink:#FFFFFF;--cell-empty:#F0F2F8;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:13px/1.45 var(--sans);display:flex;flex-direction:column}
+button,select,input,textarea{font:inherit;color:inherit}
+button{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--ink);font-weight:600}
+button.ghost{background:transparent}
+button.danger:hover{border-color:var(--rose);color:var(--rose)}
+button.small{padding:2px 7px;font-size:12px}
+button:disabled{opacity:.45;cursor:default}
+input[type=text],input[type=number],select,textarea{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:4px 7px;min-width:0}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+textarea{font-family:var(--mono);font-size:12px;width:100%;resize:vertical}
+header{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--side);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;margin-right:auto;min-width:0}
+.logo{background:var(--accent);color:var(--ink);font-weight:800;width:28px;height:28px;border-radius:6px;display:grid;place-items:center}
+.brand h1{font-size:15px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand .sub{color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:520px}
+.tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+main{flex:1;display:grid;grid-template-columns:250px minmax(0,1fr) 380px;min-height:0}
+aside,section{min-height:0;display:flex;flex-direction:column}
+.pane-head{display:flex;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid var(--border);font-weight:600}
+.pane-head .count{margin-left:auto;color:var(--muted);font:11px var(--mono)}
+#levels{border-right:1px solid var(--border);background:var(--panel)}
+#levelList{list-style:none;margin:0;padding:6px;overflow:auto;flex:1}
+#levelList li{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+#levelList li:hover{background:var(--surface)}
+#levelList li.active{background:var(--sel);border-color:var(--accent)}
+#levelList li.drag-over{border-top:2px solid var(--accent)}
+#levelList .num{font:600 11px var(--mono);color:var(--accent);min-width:28px}
+#levelList .lbl{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#levelList .warn{color:var(--amber);font-size:11px}
+.level-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;padding:8px;border-top:1px solid var(--border)}
+#editorPane{overflow:auto;padding:14px 18px 60px}
+#rightPane{border-left:1px solid var(--border);background:var(--panel)}
+.tabs{display:flex;border-bottom:1px solid var(--border)}
+.tabs button{flex:1;border:0;border-radius:0;background:transparent;padding:9px 4px;border-bottom:2px solid transparent;color:var(--muted)}
+.tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-body{flex:1;overflow:auto;padding:12px;display:none}
+.tab-body.on{display:block}
+pre{margin:0;font:12px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word}
+.field{display:grid;grid-template-columns:minmax(120px,190px) minmax(0,1fr);gap:4px 12px;align-items:start;padding:5px 0;border-bottom:1px dashed color-mix(in srgb,var(--border) 60%,transparent)}
+.field>label{padding-top:4px;overflow:hidden;text-overflow:ellipsis}
+.field>label .fname{font-weight:600}
+.field>label .ftype{display:block;color:var(--muted);font:11px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.field>label .tip{display:block;color:var(--muted);font-size:11px;white-space:normal}
+.field.wide{grid-template-columns:1fr}
+.badge{display:inline-block;font:600 10px var(--mono);padding:1px 5px;border-radius:4px;margin-left:4px;vertical-align:1px;background:var(--surface);color:var(--muted)}
+.badge.apk{color:var(--sky)}.badge.prop{color:var(--violet)}.badge.unity{color:var(--green)}
+.group-header{margin:14px 0 2px;color:var(--accent);font:600 11px var(--sans);text-transform:uppercase;letter-spacing:.06em}
+details.obj{border:1px solid var(--border);border-radius:7px;background:var(--panel);margin:2px 0}
+details.obj>summary{cursor:pointer;padding:6px 10px;list-style:none;display:flex;gap:8px;align-items:center}
+details.obj>summary::-webkit-details-marker{display:none}
+details.obj>summary::before{content:"▸";color:var(--muted)}
+details.obj[open]>summary::before{content:"▾"}
+details.obj>.obj-body{padding:2px 12px 8px}
+.summary-text{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.list{display:flex;flex-direction:column;gap:4px}
+.list-head{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.list-head .count{color:var(--muted);font:11px var(--mono)}
+.list-item{display:flex;gap:6px;align-items:flex-start}
+.list-item>.idx{font:11px var(--mono);color:var(--muted);min-width:26px;padding-top:6px;text-align:right}
+.list-item>.val{flex:1;min-width:0}
+.list-item>.ops{display:flex;gap:2px;padding-top:2px}
+.inline-list{display:flex;flex-wrap:wrap;gap:4px}
+.inline-list .chip{display:flex;align-items:center;gap:2px;background:var(--surface);border-radius:5px;padding:1px 2px 1px 4px}
+.inline-list .chip input,.inline-list .chip select{width:74px;padding:2px 4px}
+.inline-list .chip button{padding:0 5px;border:0;background:transparent;color:var(--muted)}
+.flags{display:flex;flex-wrap:wrap;gap:4px}
+.flags label{background:var(--surface);border-radius:5px;padding:2px 7px;cursor:pointer}
+.color-row{display:flex;gap:8px;align-items:center}
+.color-row input[type=color]{width:40px;height:26px;padding:0;border:1px solid var(--border);border-radius:5px;background:none}
+.board{margin:6px 0 10px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--panel)}
+.board-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.board-head strong{color:var(--accent)}
+.palette{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.swatch{display:flex;align-items:center;gap:5px;padding:3px 8px 3px 4px;border-radius:5px;border:1px solid var(--border);cursor:pointer;font-size:12px;background:var(--bg)}
+.swatch i{width:14px;height:14px;border-radius:3px;display:inline-block;border:1px solid rgba(0,0,0,.25)}
+.swatch.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.grid-wrap{overflow:auto;max-height:560px}
+.grid{display:grid;gap:2px;user-select:none;width:max-content}
+.cell{width:var(--cs,34px);height:var(--cs,34px);border-radius:4px;background:var(--cell-empty);display:grid;place-items:center;font:600 10px var(--mono);color:#0B1020;cursor:crosshair;position:relative;overflow:hidden;border:1px solid transparent}
+.cell.empty{color:var(--muted)}
+.cell.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.cell .stack{position:absolute;right:1px;bottom:0;font-size:9px;color:#fff;text-shadow:0 0 2px #000}
+.axis{font:10px var(--mono);color:var(--muted);display:grid;place-items:center}
+.hint{color:var(--muted);font-size:12px}
+.warnbox{border:1px solid var(--amber);color:var(--amber);border-radius:6px;padding:6px 10px;margin:6px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.issue{padding:6px 8px;border-left:3px solid var(--amber);background:var(--bg);margin-bottom:5px;border-radius:0 5px 5px 0}
+.issue.err{border-color:var(--rose)}
+.issue code,.mono{font-family:var(--mono);font-size:12px}
+.ok{color:var(--green)}
+.card{border:1px solid var(--border);border-radius:7px;padding:8px 10px;margin-bottom:8px;background:var(--bg)}
+.card h4{margin:0 0 4px;font-size:13px;display:flex;gap:6px;align-items:center}
+.card .ns{color:var(--muted);font:11px var(--mono)}
+.members{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}
+.members span{font:11px var(--mono);padding:1px 6px;border-radius:4px;background:var(--surface)}
+.members span i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
+.sample{display:flex;gap:6px;align-items:center;padding:5px 6px;border-radius:5px}
+.sample:hover{background:var(--surface)}
+.sample .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sample .score{font:11px var(--mono);color:var(--muted);min-width:40px;text-align:right}
+.toolbar-row{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center}
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--surface);border:1px solid var(--accent);padding:8px 14px;border-radius:8px;display:none;z-index:9;max-width:90vw}
+footer{display:flex;gap:14px;padding:5px 16px;border-top:1px solid var(--border);background:var(--side);color:var(--muted);font:11px var(--mono);flex-wrap:wrap}
+.dropping{outline:2px dashed var(--accent);outline-offset:-6px}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:10px;max-width:min(900px,92vw);width:100%;padding:0}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+dialog .dlg-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border)}
+dialog .dlg-body{padding:12px 14px;max-height:70vh;overflow:auto}
+@media (max-width:1100px){main{grid-template-columns:200px minmax(0,1fr)}#rightPane{grid-column:1/-1;border-left:0;border-top:1px solid var(--border);max-height:45vh}}
+@media (max-width:700px){main{grid-template-columns:1fr}#levels{max-height:30vh;border-right:0;border-bottom:1px solid var(--border)}.field{grid-template-columns:1fr}#editorPane{padding:12px 16px 40px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="logo">L</div><div style="min-width:0"><h1 id="title">Level Editor</h1><div class="sub" id="subtitle"></div></div></div>
+  <div class="tools">
+    <button id="btnUndo" title="Ctrl+Z">↶ Hoàn tác</button>
+    <button id="btnRedo" title="Ctrl+Y">↷ Làm lại</button>
+    <label class="hint" title="Cách ghi enum trong JSON">Enum:
+      <select id="enumMode"><option value="number">số</option><option value="name">tên</option></select></label>
+    <button id="btnImport">Nhập JSON…</button>
+    <button id="btnExportOne">Tải level</button>
+    <button id="btnExportZip" class="primary">Tải tất cả (.zip)</button>
+    <button id="btnExportArray" title="Một file JSON chứa mảng levels">Tải gộp</button>
+    <button id="btnTheme" class="ghost" title="Đổi giao diện sáng/tối">◐</button>
+  </div>
+</header>
+<main>
+  <aside id="levels">
+    <div class="pane-head">Danh sách level<span class="count" id="levelCount"></span></div>
+    <ul id="levelList"></ul>
+    <div class="level-actions">
+      <button id="btnNew">＋ Mới</button><button id="btnDup">⧉ Nhân bản</button><button id="btnDel" class="danger">✕ Xóa</button>
+      <button id="btnUp">↑ Lên</button><button id="btnDown">↓ Xuống</button><button id="btnRenumber" title="Gán lại trường số thứ tự theo vị trí">№ Đánh số</button>
+    </div>
+  </aside>
+  <section id="editorPane"></section>
+  <aside id="rightPane">
+    <div class="tabs">
+      <button data-tab="json" class="on">JSON</button><button data-tab="mech">Cơ chế game</button>
+      <button data-tab="samples">Level từ APK</button><button data-tab="check">Kiểm tra</button>
+    </div>
+    <div class="tab-body on" id="tab-json">
+      <div class="toolbar-row"><button id="btnCopy" class="small">Sao chép</button><span class="hint">JSON của level đang chọn, đúng schema LevelData.</span></div>
+      <pre id="jsonOut"></pre>
+    </div>
+    <div class="tab-body" id="tab-mech"></div>
+    <div class="tab-body" id="tab-samples">
+      <div class="toolbar-row"><input type="text" id="sampleFilter" placeholder="Lọc theo tên/nhóm…" style="flex:1"><button id="btnImportAllSamples" class="small">Nhập tất cả đã lọc</button></div>
+      <div id="sampleList"></div>
+    </div>
+    <div class="tab-body" id="tab-check"></div>
+  </aside>
+</main>
+<footer><span id="stat"></span><span id="saveState"></span><span style="margin-left:auto">DucAPK · Level Editor</span></footer>
+<input type="file" id="fileInput" accept=".json,application/json" multiple hidden>
+<dialog id="dlg"><div class="dlg-head"><strong id="dlgTitle"></strong><span style="margin-left:auto"></span><button id="dlgAction" class="primary small"></button><button id="dlgClose" class="small">Đóng</button></div><div class="dlg-body"><pre id="dlgBody"></pre></div></dialog>
+<div id="toast"></div>
+<script>
+"use strict";
+const D = /*__DUCAPK_DATA__*/null;
+const $ = (s, r = document) => r.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (k === "style" && typeof v === "object") Object.assign(n.style, v);
+    else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) n.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  return n;
+};
+const clone = v => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} },
+};
+const KEY = "ducapk-level-editor:" + D.meta.schema_id;
+const ROOT = D.root;
+const S = { levels: [], cur: 0, enumMode: "number", open: new Set(), undo: [], redo: [], last: "", sel: null, pal: {} };
+
+/* ---------- schema helpers ---------- */
+const cls = key => D.classes[key] || { name: key, fields: [] };
+const enm = key => D.enums[key] || { name: key, members: [] };
+const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+const memberName = (desc, v) => { const m = enm(desc.ref).members.find(x => x[0] === v); return m ? m[1] : null; };
+function enumLabel(desc, v) {
+  const e = enm(desc.ref);
+  if (e.flags && v) { const names = e.members.filter(m => m[0] && (v & m[0]) === m[0]).map(m => m[1]); if (names.length) return names.join("|"); }
+  return memberName(desc, v) ?? String(v);
+}
+function typeLabel(desc) {
+  switch (desc.k) {
+    case "list": return (desc.md ? "[" + ",".repeat(desc.md - 1) + "] " : "List<") + typeLabel(desc.md ? innermost(desc) : desc.of) + (desc.md ? "" : ">");
+    case "dict": return `Dict<${typeLabel(desc.key)}, ${typeLabel(desc.val)}>`;
+    case "obj": return cls(desc.ref).name;
+    case "enum": return enm(desc.ref).name;
+    case "raw": return desc.cs || "?";
+    default: return desc.k;
+  }
+}
+const innermost = d => { while (d.k === "list") d = d.of; return d; };
+const isScalar = d => ["int", "float", "bool", "string", "char", "enum"].includes(d.k);
+
+function defaultFor(desc, depth = 0) {
+  if (desc.nullable) return null;
+  switch (desc.k) {
+    case "int": case "float": return 0;
+    case "bool": return false;
+    case "string": case "char": return "";
+    case "enum": { const m = enm(desc.ref).members; return m.length ? m[0][0] : 0; }
+    case "list": return [];
+    case "dict": return {};
+    case "obj": return depth > 6 ? null : makeObj(desc.ref, depth + 1);
+    default: return null;
+  }
+}
+function makeObj(key, depth = 0) {
+  const o = {};
+  const fields = cls(key).fields;
+  for (const f of fields) o[f.json] = f.default !== undefined ? clone(f.default) : defaultFor(f.type, depth);
+  /* flat width×height maps start with one entry per cell */
+  const w = fields.find(f => f.type.k === "int" && W_NAMES.test(norm(f.json))), h = fields.find(f => f.type.k === "int" && H_NAMES.test(norm(f.json)));
+  const cells = w && h ? (o[w.json] | 0) * (o[h.json] | 0) : 0;
+  if (cells > 0 && cells <= 10000) for (const f of fields) if (isFlatGrid(f.type, w, h) && Array.isArray(o[f.json]) && !o[f.json].length)
+    for (let i = 0; i < cells; i++) o[f.json].push(defaultFor(f.type.of, depth));
+  return o;
+}
+const isFlatGrid = desc => desc.k === "list" && (isScalar(desc.of) || (desc.of.k === "obj" && cls(desc.of.ref).src !== "unity" && !coordFields(desc.of.ref) && typeField(desc.of.ref)));
+
+/* coerce any JSON (APK data, imported files) into the LevelData shape */
+function coerce(desc, v, stats, depth = 0) {
+  if (v === null || v === undefined) return desc.nullable ? null : defaultFor(desc, depth);
+  switch (desc.k) {
+    case "int": { const n = typeof v === "boolean" ? +v : Number(v); return Number.isFinite(n) ? Math.trunc(n) : (stats.bad++, 0); }
+    case "float": { const n = Number(v); return Number.isFinite(n) ? n : (stats.bad++, 0); }
+    case "bool": return v === true || v === 1 || v === "true" || v === "1";
+    case "string": case "char": return typeof v === "string" ? v : typeof v === "object" ? JSON.stringify(v) : String(v);
+    case "enum": {
+      if (typeof v === "number") return Math.trunc(v);
+      if (typeof v === "string") {
+        const e = enm(desc.ref); let total = 0, hit = false;
+        for (const part of v.split(/[|,]/)) {
+          const m = e.members.find(x => norm(x[1]) === norm(part));
+          if (m) { total |= m[0]; hit = true; } else if (/^-?\d+$/.test(part.trim())) { total |= +part; hit = true; }
+        }
+        if (hit) return total;
+      }
+      stats.bad++; return defaultFor(desc);
+    }
+    case "list": {
+      if (!Array.isArray(v)) { if (v && typeof v === "object" && Array.isArray(v.Array || v.items || v.list)) v = v.Array || v.items || v.list; else { stats.bad++; return []; } }
+      return v.map(x => coerce(desc.of, x, stats, depth + 1));
+    }
+    case "dict": {
+      if (Array.isArray(v)) { const o = {}; for (const p of v) if (p && typeof p === "object") o[p.Key ?? p.key ?? p.k] = coerce(desc.val, p.Value ?? p.value ?? p.v, stats, depth + 1); return o; }
+      if (typeof v !== "object") { stats.bad++; return {}; }
+      const o = {}; for (const [k, x] of Object.entries(v)) o[k] = coerce(desc.val, x, stats, depth + 1); return o;
+    }
+    case "obj": {
+      if (typeof v !== "object" || Array.isArray(v)) { stats.bad++; return defaultFor(desc, depth); }
+      const c = cls(desc.ref), o = {}, used = new Set(), keys = Object.keys(v);
+      for (const f of c.fields) {
+        const want = [f.json, f.name].map(norm);
+        let k = keys.find(x => x === f.json) ?? keys.find(x => want.includes(norm(x))) ?? keys.find(x => want.includes(norm(x.replace(/^m_|^_/, ""))));
+        if (k === undefined) { stats.missing++; o[f.json] = f.default !== undefined ? clone(f.default) : defaultFor(f.type, depth); }
+        else { used.add(k); stats.matched++; o[f.json] = coerce(f.type, v[k], stats, depth + 1); }
+      }
+      stats.ignored += keys.filter(k => !used.has(k)).length;
+      return o;
+    }
+    default: return clone(v);
+  }
+}
+/* how well an object fits a class: fraction of field names present */
+function fit(key, obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return 0;
+  const fields = cls(key).fields; if (!fields.length) return 0;
+  const keys = new Set(Object.keys(obj).map(k => norm(k.replace(/^m_|^_/, ""))));
+  return fields.filter(f => keys.has(norm(f.json)) || keys.has(norm(f.name))).length / fields.length;
+}
+/* find the sub-object of any decoded APK record that best fits the root class */
+function bestMatch(data) {
+  let best = { score: fit(ROOT, data), value: data, path: "" };
+  const walk = (v, path, depth) => {
+    if (depth > 4 || !v || typeof v !== "object") return;
+    for (const [k, x] of Object.entries(v)) {
+      if (Array.isArray(x)) { if (x.length && typeof x[0] === "object") walk(x[0], path + "." + k + "[0]", depth + 1); continue; }
+      if (x && typeof x === "object") { const s = fit(ROOT, x); if (s > best.score) best = { score: s, value: x, path: path + "." + k }; walk(x, path + "." + k, depth + 1); }
+    }
+  };
+  walk(data, "", 0);
+  return best;
+}
+
+function serialize(desc, v, stringEnum) {
+  if (v === null || v === undefined) return v ?? null;
+  switch (desc.k) {
+    case "enum": return (S.enumMode === "name" || stringEnum || enm(desc.ref).string) ? enumLabel(desc, v).replace(/\|/g, ", ") : v;
+    case "list": return Array.isArray(v) ? v.map(x => serialize(desc.of, x, stringEnum)) : v;
+    case "dict": { const o = {}; for (const [k, x] of Object.entries(v || {})) o[k] = serialize(desc.val, x, stringEnum); return o; }
+    case "obj": { const o = {}; for (const f of cls(desc.ref).fields) o[f.json] = serialize(f.type, v[f.json], f.string_enum); return o; }
+    default: return v;
+  }
+}
+const rootDesc = { k: "obj", ref: ROOT };
+const levelJSON = lv => serialize(rootDesc, lv);
+
+/* ---------- colors for palette values ---------- */
+function colorFor(label, value) {
+  if (/^(none|empty|null|nothing|blank|air)$/i.test(String(label)) || value === null) return null;
+  let h = 0; const s = String(label); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  if (typeof value === "number" && !/[a-z]/i.test(s)) h = value * 47 + 11;
+  return `hsl(${h % 360} 72% 62%)`;
+}
+function paletteFor(desc, values) {
+  if (desc.k === "enum") return enm(desc.ref).members.map(([v, n]) => ({ v, label: n, color: colorFor(n, v) }));
+  if (desc.k === "bool") return [{ v: false, label: "false", color: null }, { v: true, label: "true", color: colorFor("true", 1) }];
+  const set = new Set([0, 1, 2, 3, ...values.filter(x => typeof x === "number")]);
+  return [...set].sort((a, b) => a - b).slice(0, 40).map(v => ({ v, label: String(v), color: v === 0 ? null : colorFor(String(v), v) }));
+}
+
+/* ---------- level list ---------- */
+const ID_FIELDS = /^(levelid|levelindex|levelnumber|levelnum|level|id|index|number|no|stage|stageid)$/;
+const NAME_FIELDS = /^(name|levelname|title|displayname|label)$/;
+function idField() { return cls(ROOT).fields.find(f => (f.type.k === "int") && ID_FIELDS.test(norm(f.json))); }
+function levelLabel(lv, i) {
+  const f = cls(ROOT).fields;
+  const nm = f.find(x => x.type.k === "string" && NAME_FIELDS.test(norm(x.json)));
+  const id = idField();
+  const parts = [];
+  if (id) parts.push(`${id.json} ${lv[id.json]}`);
+  if (nm && lv[nm.json]) parts.push(lv[nm.json]);
+  return parts.join(" · ") || `Level ${i + 1}`;
+}
+function renderList() {
+  const ul = $("#levelList"); ul.textContent = "";
+  S.levels.forEach((lv, i) => {
+    const issues = validate(lv).filter(x => x.err).length;
+    const li = el("li", { class: i === S.cur ? "active" : "", draggable: "true",
+      onclick: () => { S.cur = i; S.sel = null; renderAll(); },
+      ondragstart: e => { e.dataTransfer.setData("text/x-level", String(i)); e.dataTransfer.effectAllowed = "move"; },
+      ondragover: e => { if ([...e.dataTransfer.types].includes("text/x-level")) { e.preventDefault(); li.classList.add("drag-over"); } },
+      ondragleave: () => li.classList.remove("drag-over"),
+      ondrop: e => { e.preventDefault(); li.classList.remove("drag-over"); const from = +e.dataTransfer.getData("text/x-level"); if (!Number.isNaN(from)) move(from, i); } },
+      el("span", { class: "num", text: String(i + 1).padStart(2, "0") }),
+      el("span", { class: "lbl", text: levelLabel(lv, i) }),
+      issues ? el("span", { class: "warn", title: issues + " lỗi", text: "⚠" + issues } ) : null);
+    ul.append(li);
+  });
+  $("#levelCount").textContent = S.levels.length + " level";
+  $("#btnRenumber").disabled = !idField();
+}
+function move(from, to) {
+  if (from === to || from < 0 || to < 0 || from >= S.levels.length || to >= S.levels.length) return;
+  const [lv] = S.levels.splice(from, 1); S.levels.splice(to, 0, lv);
+  S.cur = to; changed(true);
+}
+
+/* ---------- form rendering ---------- */
+let suppress = false;
+function changed(structural) {
+  if (structural) renderAll(); else { renderSide(); renderListSoon(); }
+  scheduleSave();
+}
+let listTimer = 0;
+function renderListSoon() { clearTimeout(listTimer); listTimer = setTimeout(renderList, 250); }
+
+function editor(desc, get, set, path, meta = {}) {
+  const v = get();
+  if (desc.nullable && v === null && desc.k !== "raw") {
+    return el("div", { class: "list-head" }, el("span", { class: "hint", text: "null" }),
+      el("button", { class: "small", text: "Tạo giá trị", onclick: () => { set(defaultFor({ ...desc, nullable: false })); changed(true); } }));
+  }
+  switch (desc.k) {
+    case "int": case "float": {
+      const r = meta.range || [meta.min ?? desc.min, desc.max];
+      const shape = meta.json && SHAPE_NAMES.test(norm(meta.json));
+      return el("input", { type: "number", value: v ?? 0, step: desc.k === "int" ? 1 : "any", min: r[0], max: r[1], style: { width: "160px" },
+        oninput: e => { const n = e.target.value === "" ? 0 : Number(e.target.value); set(desc.k === "int" ? Math.trunc(n) : n); changed(false); },
+        onchange: shape ? () => changed(true) : null });
+    }
+    case "bool":
+      return el("input", { type: "checkbox", checked: !!v, onchange: e => { set(e.target.checked); changed(false); } });
+    case "string": case "char": {
+      const attrs = { value: v ?? "", oninput: e => { set(desc.k === "char" ? e.target.value.slice(0, 1) : e.target.value); changed(false); } };
+      if (meta.multiline) { const t = el("textarea", { rows: 3, oninput: attrs.oninput }); t.value = v ?? ""; return t; }
+      return el("input", { type: "text", ...attrs, maxlength: desc.k === "char" ? 1 : null, style: { width: "100%" } });
+    }
+    case "enum": return enumEditor(desc, get, set);
+    case "obj": return objEditor(desc, get, set, path, meta);
+    case "list": return listEditor(desc, get, set, path, meta);
+    case "dict": return dictEditor(desc, get, set, path);
+    default: {
+      const t = el("textarea", { rows: 3, title: "Kiểu " + (desc.cs || "?") + " chưa xác định — nhập JSON",
+        oninput: e => { try { set(JSON.parse(e.target.value || "null")); e.target.style.borderColor = ""; changed(false); } catch (err) { e.target.style.borderColor = "var(--rose)"; } } });
+      t.value = JSON.stringify(v ?? null, null, 1); return t;
+    }
+  }
+}
+function enumEditor(desc, get, set) {
+  const e = enm(desc.ref), v = get();
+  if (e.flags) {
+    return el("div", { class: "flags" }, e.members.filter(m => m[0] !== 0).map(([mv, mn]) =>
+      el("label", {}, el("input", { type: "checkbox", checked: (v & mv) === mv, onchange: ev => { set(ev.target.checked ? (get() | mv) : (get() & ~mv)); changed(false); } }), " " + mn)));
+  }
+  const sel = el("select", { onchange: ev => { set(Number(ev.target.value)); changed(true); } },
+    e.members.map(([mv, mn]) => el("option", { value: mv, text: `${mn} (${mv})` })));
+  if (!e.members.some(m => m[0] === v)) sel.append(el("option", { value: v, text: `? ${v} (không có trong enum)` }));
+  sel.value = String(v);
+  return sel;
+}
+function summaryOf(desc, v) {
+  if (!v || typeof v !== "object") return "";
+  const parts = [];
+  for (const f of cls(desc.ref).fields) {
+    const x = v[f.json];
+    if (f.type.k === "enum") parts.push(enumLabel(f.type, x));
+    else if (f.type.k === "string" && x) parts.push(JSON.stringify(x));
+    else if (f.type.k === "int" || f.type.k === "float" || f.type.k === "bool") parts.push(`${f.json}=${x}`);
+    else if (f.type.k === "list" && Array.isArray(x)) parts.push(`${f.json}[${x.length}]`);
+    else if (f.type.k === "obj" && x && cls(f.type.ref).src === "unity") parts.push(`${f.json}(${Object.values(x).join(",")})`);
+    if (parts.length >= 5) break;
+  }
+  return parts.join("  ");
+}
+function fieldRow(f, holder, path) {
+  const tag = f.prop ? el("span", { class: "badge prop", text: "prop" }) : null;
+  const t = f.type, wide = (t.k === "obj" && cls(t.ref).src !== "unity") || (t.k === "list" && !isScalar(t.of)) || t.k === "dict";
+  const label = el("label", { title: f.cs },
+    el("span", { class: "fname", text: f.json }), tag,
+    el("span", { class: "ftype", text: f.cs }),
+    f.tooltip ? el("span", { class: "tip", text: f.tooltip }) : null);
+  const ed = editor(t, () => holder[f.json], x => { holder[f.json] = x; }, path + "." + f.json, f);
+  return el("div", { class: "field" + (wide ? " wide" : "") }, label, ed);
+}
+function objEditor(desc, get, set, path, meta) {
+  const c = cls(desc.ref); let v = get();
+  if (!v || typeof v !== "object") { v = makeObj(desc.ref); set(v); }
+  if (c.src === "unity") return unityEditor(c, v);
+  const body = el("div", { class: "obj-body" });
+  const boards = boardsFor(desc.ref, v, path);
+  boards.forEach(b => body.append(b));
+  for (const f of c.fields) {
+    if (f.header) body.append(el("div", { class: "group-header", text: f.header }));
+    body.append(fieldRow(f, v, path));
+  }
+  if (meta.top) return body;
+  const d = el("details", { class: "obj", open: S.open.has(path) || meta.open ? true : null,
+    ontoggle: () => d.open ? S.open.add(path) : S.open.delete(path) },
+    el("summary", {}, el("strong", { text: c.name }), c.src === "apk" ? el("span", { class: "badge apk", text: "APK" }) : null,
+      el("span", { class: "summary-text", text: summaryOf(desc, v) })), body);
+  return d;
+}
+function unityEditor(c, v) {
+  if (/^Color(32)?$/.test(c.name)) {
+    const scale = c.name === "Color32" ? 1 : 255;
+    const hex = ["r", "g", "b"].map(k => Math.max(0, Math.min(255, Math.round((v[k] ?? 0) * scale))).toString(16).padStart(2, "0")).join("");
+    const alpha = el("input", { type: "number", step: c.name === "Color32" ? 1 : 0.01, min: 0, max: c.name === "Color32" ? 255 : 1, value: v.a ?? (c.name === "Color32" ? 255 : 1), style: { width: "80px" },
+      oninput: e => { v.a = Number(e.target.value); changed(false); } });
+    return el("div", { class: "color-row" }, el("input", { type: "color", value: "#" + hex,
+      oninput: e => { const h = e.target.value; ["r", "g", "b"].forEach((k, i) => { const n = parseInt(h.substr(1 + i * 2, 2), 16); v[k] = c.name === "Color32" ? n : +(n / 255).toFixed(4); }); changed(false); } }),
+      el("span", { class: "hint", text: "a" }), alpha);
+  }
+  return el("div", { class: "inline-list" }, c.fields.map(f => el("label", { class: "chip" }, el("span", { class: "hint", text: f.json }),
+    el("input", { type: "number", step: f.type.k === "int" ? 1 : "any", value: v[f.json] ?? 0, oninput: e => { v[f.json] = f.type.k === "int" ? Math.trunc(+e.target.value) : +e.target.value; changed(false); } }))));
+}
+const PAGE = 60;
+function listEditor(desc, get, set, path, meta) {
+  let arr = get(); if (!Array.isArray(arr)) { arr = []; set(arr); }
+  const wrap = el("div", { class: "list" });
+  const of = desc.of;
+  const head = el("div", { class: "list-head" }, el("span", { class: "count", text: `${arr.length} mục` }),
+    el("button", { class: "small", text: "＋ Thêm", onclick: () => { arr.push(defaultFor(of)); S.open.add(path + "[" + (arr.length - 1) + "]"); changed(true); } }),
+    arr.length ? el("button", { class: "small danger", text: "Xóa hết", onclick: () => { if (confirm(`Xóa ${arr.length} mục?`)) { arr.length = 0; changed(true); } } }) : null);
+  wrap.append(head);
+  if (of.k === "list" && isScalar(innermost(of)) && !of.of.k.startsWith("list")) wrap.append(matrixBoard(desc, arr, path));
+  if (isScalar(of) && of.k !== "string") {
+    const box = el("div", { class: "inline-list" });
+    const shown = S.open.has(path + "#all") ? arr.length : Math.min(arr.length, 120);
+    for (let i = 0; i < shown; i++) {
+      box.append(el("span", { class: "chip" }, editor(of, () => arr[i], x => { arr[i] = x; }, path + "[" + i + "]"),
+        el("button", { title: "Xóa", text: "×", onclick: () => { arr.splice(i, 1); changed(true); } })));
+    }
+    wrap.append(box);
+    if (shown < arr.length) wrap.append(el("button", { class: "small", text: `Hiện tất cả ${arr.length}`, onclick: () => { S.open.add(path + "#all"); changed(true); } }));
+    return wrap;
+  }
+  const limit = S.open.has(path + "#all") ? arr.length : Math.min(arr.length, PAGE);
+  for (let i = 0; i < limit; i++) {
+    const p = path + "[" + i + "]";
+    const item = el("div", { class: "list-item", id: "item-" + p.replace(/[^\w]/g, "_") },
+      el("span", { class: "idx", text: i }),
+      el("div", { class: "val" }, editor(of, () => arr[i], x => { arr[i] = x; }, p, { open: S.sel === p })),
+      el("span", { class: "ops" },
+        el("button", { class: "small ghost", title: "Lên", text: "↑", disabled: i === 0, onclick: () => { [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]]; changed(true); } }),
+        el("button", { class: "small ghost", title: "Nhân bản", text: "⧉", onclick: () => { arr.splice(i + 1, 0, clone(arr[i])); changed(true); } }),
+        el("button", { class: "small ghost danger", title: "Xóa", text: "✕", onclick: () => { arr.splice(i, 1); changed(true); } })));
+    wrap.append(item);
+  }
+  if (limit < arr.length) wrap.append(el("button", { class: "small", text: `Hiện thêm ${arr.length - limit} mục`, onclick: () => { S.open.add(path + "#all"); changed(true); } }));
+  return wrap;
+}
+function dictEditor(desc, get, set, path) {
+  let obj = get(); if (!obj || typeof obj !== "object") { obj = {}; set(obj); }
+  const wrap = el("div", { class: "list" });
+  wrap.append(el("div", { class: "list-head" }, el("span", { class: "count", text: Object.keys(obj).length + " khóa" }),
+    el("button", { class: "small", text: "＋ Thêm khóa", onclick: () => { let k = desc.key.k === "int" || desc.key.k === "enum" ? String(Object.keys(obj).length) : "key" + Object.keys(obj).length; while (k in obj) k += "_"; obj[k] = defaultFor(desc.val); changed(true); } })));
+  for (const k of Object.keys(obj)) {
+    const keyIn = el("input", { type: "text", value: k, style: { width: "120px" }, onchange: e => { const nk = e.target.value; if (nk && !(nk in obj)) { obj[nk] = obj[k]; delete obj[k]; changed(true); } } });
+    wrap.append(el("div", { class: "list-item" }, keyIn, el("div", { class: "val" }, editor(desc.val, () => obj[k], x => { obj[k] = x; }, path + "{" + k + "}")),
+      el("button", { class: "small ghost danger", text: "✕", onclick: () => { delete obj[k]; changed(true); } })));
+  }
+  return wrap;
+}
+
+/* ---------- boards: matrix, flat width×height, coordinate placement ---------- */
+const W_NAMES = /^(width|w|cols?|columns?|columncount|colcount|sizex|gridwidth|mapwidth|boardwidth|xsize|numcols|gridx|countx)$/;
+const H_NAMES = /^(height|h|rows?|rowcount|sizey|gridheight|mapheight|boardheight|ysize|numrows|gridy|county)$/;
+const X_NAMES = ["x", "col", "column", "posx", "gridx", "cellx", "px", "i"];
+const Y_NAMES = ["y", "row", "posy", "gridy", "celly", "py", "j"];
+const POS_NAMES = /^(pos|position|coord|coords|coordinate|cell|gridpos|gridposition|tile|index2d|point)$/;
+const TYPE_NAMES = /(type|kind|element|elementid|id|color|colour|item|tile|value|piece|block)$/;
+const SHAPE_NAMES = { test: n => W_NAMES.test(n) || H_NAMES.test(n) || X_NAMES.includes(n) || Y_NAMES.includes(n) };
+
+function coordFields(key) {
+  const f = cls(key).fields;
+  const ints = f.filter(x => x.type.k === "int" || x.type.k === "float");
+  const find = names => { for (const n of names) { const m = ints.find(x => norm(x.json) === n); if (m) return m; } return null; };
+  const x = find(X_NAMES), y = find(Y_NAMES);
+  if (x && y && x !== y) return { get: o => [o[x.json], o[y.json]], put: (o, cx, cy) => { o[x.json] = cx; o[y.json] = cy; }, label: `${x.json}/${y.json}` };
+  const pos = f.find(v => v.type.k === "obj" && POS_NAMES.test(norm(v.json)) && cls(v.type.ref).fields.some(q => q.json === "x") && cls(v.type.ref).fields.some(q => q.json === "y"));
+  if (pos) return { get: o => [o[pos.json]?.x, o[pos.json]?.y], put: (o, cx, cy) => { o[pos.json] = { ...(o[pos.json] || makeObj(pos.type.ref)), x: cx, y: cy }; }, label: pos.json };
+  return null;
+}
+function typeField(key, exclude = []) {
+  const f = cls(key).fields.filter(x => !exclude.includes(x.json));
+  return f.find(x => x.type.k === "enum") || f.find(x => (x.type.k === "int") && TYPE_NAMES.test(norm(x.json)) && !X_NAMES.includes(norm(x.json)) && !Y_NAMES.includes(norm(x.json)));
+}
+function boardsFor(key, obj, path) {
+  const out = [], fields = cls(key).fields;
+  const w = fields.find(f => f.type.k === "int" && W_NAMES.test(norm(f.json)));
+  const h = fields.find(f => f.type.k === "int" && H_NAMES.test(norm(f.json)));
+  for (const f of fields) {
+    if (f.type.k !== "list") continue;
+    const of = f.type.of;
+    if (of.k === "obj" && cls(of.ref).src !== "unity") {
+      const co = coordFields(of.ref);
+      if (co) { out.push(placementBoard(f, of, obj, co, w, h, path)); continue; }
+    }
+    if (w && h && isFlatGrid(f.type)) out.push(flatBoard(f, of, obj, w, h, path));
+  }
+  return out;
+}
+function paletteBar(id, pal, extra) {
+  const cur = S.pal[id] ?? pal[Math.min(1, pal.length - 1)]?.v;
+  S.pal[id] = cur;
+  const bar = el("div", { class: "palette" });
+  for (const p of pal) {
+    const sw = el("span", { class: "swatch" + (JSON.stringify(p.v) === JSON.stringify(cur) ? " on" : ""), title: String(p.v),
+      onclick: () => { S.pal[id] = p.v; bar.querySelectorAll(".swatch").forEach(x => x.classList.remove("on")); sw.classList.add("on"); } },
+      el("i", { style: { background: p.color || "var(--cell-empty)" } }), p.label);
+    bar.append(sw);
+  }
+  if (extra) bar.append(extra);
+  return bar;
+}
+function cellView(cell, label, color) {
+  cell.style.background = color || "";
+  cell.classList.toggle("empty", !color);
+  cell.textContent = label == null ? "" : String(label).slice(0, 3);
+}
+let painting = false;
+document.addEventListener("mouseup", () => { if (painting) { painting = false; changed(true); } });
+function gridEl(cols, rows, flipY, make) {
+  const cs = Math.max(20, Math.min(40, Math.floor(560 / Math.max(cols, rows, 1))));
+  const g = el("div", { class: "grid", style: { gridTemplateColumns: `22px repeat(${cols}, ${cs}px)`, "--cs": cs + "px" } });
+  g.style.setProperty("--cs", cs + "px");
+  g.append(el("span", {}));
+  for (let x = 0; x < cols; x++) g.append(el("span", { class: "axis", text: x }));
+  for (let r = 0; r < rows; r++) {
+    const y = flipY ? rows - 1 - r : r;
+    g.append(el("span", { class: "axis", text: y }));
+    for (let x = 0; x < cols; x++) { const c = el("div", { class: "cell" }); make(c, x, y); g.append(c); }
+  }
+  return el("div", { class: "grid-wrap" }, g);
+}
+function flipToggle(id) {
+  return el("label", { class: "hint" }, el("input", { type: "checkbox", checked: !!S.pal[id + "#flip"], onchange: e => { S.pal[id + "#flip"] = e.target.checked; changed(true); } }), " Y hướng lên");
+}
+function scalarPaint(of, arr, pal, id) {
+  const lookup = v => pal.find(p => JSON.stringify(p.v) === JSON.stringify(v));
+  return {
+    show(cell, v) { const p = lookup(v); cellView(cell, p ? (of.k === "enum" ? p.label : p.label) : v, p ? p.color : colorFor(String(v), v)); cell.title = of.k === "enum" ? enumLabel(of, v) : String(v); },
+    pick() { return clone(S.pal[id]); },
+  };
+}
+function bindPaint(cell, apply, pick) {
+  cell.addEventListener("mousedown", e => { if (e.button === 2) return; e.preventDefault(); painting = true; apply(); });
+  cell.addEventListener("mouseenter", () => { if (painting) apply(); });
+  cell.addEventListener("contextmenu", e => { e.preventDefault(); pick(); });
+}
+function matrixBoard(desc, arr, path) {
+  const of = innermost(desc), id = path + "#m";
+  const values = arr.flat(Infinity);
+  const pal = paletteFor(of, values);
+  const rows = arr.length, cols = Math.max(0, ...arr.map(r => Array.isArray(r) ? r.length : 0));
+  const paint = scalarPaint(of, arr, pal, id), flip = !!S.pal[id + "#flip"];
+  const resize = (nr, nc) => { while (arr.length < nr) arr.push([]); arr.length = Math.max(0, nr); arr.forEach((r, i) => { if (!Array.isArray(r)) arr[i] = r = []; while (r.length < nc) r.push(defaultFor(of)); r.length = Math.max(0, nc); }); changed(true); };
+  const board = el("div", { class: "board" },
+    el("div", { class: "board-head" }, el("strong", { text: "Lưới" }), el("span", { class: "hint", text: `${rows} hàng × ${cols} cột · kéo chuột để tô, chuột phải để lấy màu` }),
+      el("button", { class: "small", text: "＋ hàng", onclick: () => resize(rows + 1, Math.max(cols, 1)) }),
+      el("button", { class: "small", text: "－ hàng", onclick: () => resize(rows - 1, cols) }),
+      el("button", { class: "small", text: "＋ cột", onclick: () => resize(Math.max(rows, 1), cols + 1) }),
+      el("button", { class: "small", text: "－ cột", onclick: () => resize(rows, cols - 1) }), flipToggle(id)),
+    paletteBar(id, pal, of.k === "int" ? customValue(id) : null));
+  if (rows && cols) board.append(gridEl(cols, rows, flip, (cell, x, y) => {
+    const r = arr[y]; const v = Array.isArray(r) ? r[x] : undefined;
+    if (v === undefined) { cell.style.opacity = .35; cell.title = "ngoài hàng"; }
+    else paint.show(cell, v);
+    bindPaint(cell, () => { if (!Array.isArray(arr[y])) return; while (arr[y].length <= x) arr[y].push(defaultFor(of)); arr[y][x] = paint.pick(); paint.show(cell, arr[y][x]); },
+      () => { if (Array.isArray(arr[y]) && arr[y][x] !== undefined) { S.pal[id] = arr[y][x]; changed(true); } });
+  }));
+  return board;
+}
+function customValue(id) {
+  return el("input", { type: "number", placeholder: "giá trị khác", style: { width: "110px" }, onchange: e => { if (e.target.value !== "") { S.pal[id] = Math.trunc(+e.target.value); changed(true); } } });
+}
+function flatBoard(f, of, obj, w, h, path) {
+  const id = path + "." + f.json + "#flat";
+  let arr = obj[f.json]; if (!Array.isArray(arr)) arr = obj[f.json] = [];
+  const W = Math.max(0, obj[w.json] | 0), H = Math.max(0, obj[h.json] | 0), flip = !!S.pal[id + "#flip"];
+  const tf = of.k === "obj" ? typeField(of.ref) : null;
+  const vdesc = tf ? tf.type : of;
+  const read = v => tf ? (v ? v[tf.json] : undefined) : v;
+  const values = arr.map(read);
+  const pal = paletteFor(vdesc, values), paint = scalarPaint(vdesc, values, pal, id);
+  const board = el("div", { class: "board" },
+    el("div", { class: "board-head" }, el("strong", { text: `Bản đồ ${f.json}` }),
+      el("span", { class: "hint", text: `${w.json}×${h.json} = ${W}×${H}, chỉ số = y*${w.json}+x` + (tf ? ` · tô trường ${tf.json}` : "") }), flipToggle(id)),
+    paletteBar(id, pal, vdesc.k === "int" ? customValue(id) : null));
+  if (arr.length !== W * H) board.append(el("div", { class: "warnbox" }, `${f.json} có ${arr.length} phần tử, cần ${W * H}.`,
+    el("button", { class: "small", text: "Chỉnh độ dài", onclick: () => { while (arr.length < W * H) arr.push(defaultFor(of)); arr.length = W * H; changed(true); } })));
+  if (W && H && W * H <= 10000) board.append(gridEl(W, H, flip, (cell, x, y) => {
+    const i = y * W + x;
+    if (i >= arr.length) { cell.style.opacity = .35; cell.title = "chưa có phần tử"; return; }
+    paint.show(cell, read(arr[i]));
+    bindPaint(cell, () => { const v = paint.pick(); if (tf) { if (!arr[i] || typeof arr[i] !== "object") arr[i] = makeObj(of.ref); arr[i][tf.json] = v; } else arr[i] = v; paint.show(cell, v); },
+      () => { S.pal[id] = read(arr[i]); changed(true); });
+  }));
+  return board;
+}
+function placementBoard(f, of, obj, co, w, h, path) {
+  const id = path + "." + f.json + "#place";
+  let arr = obj[f.json]; if (!Array.isArray(arr)) arr = obj[f.json] = [];
+  const tf = typeField(of.ref, co.label.split("/"));
+  const pts = arr.map(o => co.get(o || {}));
+  const maxX = Math.max(-1, ...pts.map(p => p[0] | 0)), maxY = Math.max(-1, ...pts.map(p => p[1] | 0));
+  const minX = Math.min(0, ...pts.map(p => p[0] | 0)), minY = Math.min(0, ...pts.map(p => p[1] | 0));
+  const extra = S.pal[id + "#pad"] ?? 2;
+  let W = w ? obj[w.json] | 0 : 0, H = h ? obj[h.json] | 0 : 0;
+  if (!W || W <= maxX) W = Math.max(maxX + 1 + extra, 6); if (!H || H <= maxY) H = Math.max(maxY + 1 + extra, 6);
+  const offX = -minX, offY = -minY; W += offX; H += offY;
+  const pal = tf ? paletteFor(tf.type, arr.map(o => o && o[tf.json])) : [];
+  const flip = !!S.pal[id + "#flip"];
+  const board = el("div", { class: "board" },
+    el("div", { class: "board-head" }, el("strong", { text: `Đặt ${f.json}` }),
+      el("span", { class: "hint", text: `${arr.length} ${cls(of.ref).name} theo ${co.label}` + (tf ? `, loại = ${tf.json}` : "") + " · bấm ô trống để thêm, bấm mục để chọn, chuột phải để xóa" }),
+      w && h ? null : el("button", { class: "small", text: "＋ mở rộng", onclick: () => { S.pal[id + "#pad"] = extra + 2; changed(true); } }), flipToggle(id)),
+    tf ? paletteBar(id, pal, tf.type.k === "int" ? customValue(id) : null) : null);
+  board.append(gridEl(W, H, flip, (cell, gx, gy) => {
+    const x = gx - offX, y = gy - offY;
+    const here = arr.map((o, i) => [o, i]).filter(([o]) => { const p = co.get(o || {}); return (p[0] | 0) === x && (p[1] | 0) === y; });
+    if (here.length) {
+      const [o, i] = here[here.length - 1];
+      const v = tf ? o[tf.json] : null;
+      const p = tf && pal.find(q => q.v === v);
+      cellView(cell, tf ? (p ? p.label : v) : "●", p ? p.color : colorFor(String(v ?? "x"), v ?? 1));
+      if (here.length > 1) cell.append(el("span", { class: "stack", text: here.length }));
+      const ip = path + "." + f.json + "[" + i + "]";
+      if (S.sel === ip) cell.classList.add("sel");
+      cell.title = `#${i} (${x},${y}) ${summaryOf(of, o)}`;
+      cell.onclick = () => { const next = here.length > 1 && S.sel === ip ? here[(here.findIndex(q => q[1] === i) + 1) % here.length][1] : i; S.sel = path + "." + f.json + "[" + next + "]"; S.open.add(S.sel); renderAll(); scrollToSel(); };
+      cell.oncontextmenu = e => { e.preventDefault(); arr.splice(i, 1); S.sel = null; changed(true); };
+    } else {
+      cellView(cell, null, null);
+      cell.title = `(${x},${y})`;
+      cell.onclick = () => { const o = makeObj(of.ref); co.put(o, x, y); if (tf) o[tf.json] = clone(S.pal[id]); arr.push(o); changed(true); };
+      cell.oncontextmenu = e => e.preventDefault();
+    }
+  }));
+  return board;
+}
+function scrollToSel() {
+  if (!S.sel) return;
+  const n = document.getElementById("item-" + S.sel.replace(/[^\w]/g, "_"));
+  if (n) n.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+/* ---------- validation ---------- */
+function validate(lv) {
+  const out = [];
+  const walk = (desc, v, path, meta = {}) => {
+    if (v === null || v === undefined) { if (!desc.nullable && desc.k !== "raw" && desc.k !== "obj") out.push({ err: true, path, msg: "thiếu giá trị" }); return; }
+    switch (desc.k) {
+      case "int": case "float": {
+        if (typeof v !== "number" || !Number.isFinite(v)) { out.push({ err: true, path, msg: "không phải số" }); return; }
+        if (desc.k === "int" && !Number.isInteger(v)) out.push({ err: true, path, msg: "phải là số nguyên" });
+        const r = meta.range; if (r && (v < r[0] || v > r[1])) out.push({ err: false, path, msg: `ngoài Range(${r[0]}, ${r[1]})` });
+        if (meta.min !== undefined && v < meta.min) out.push({ err: false, path, msg: `nhỏ hơn Min(${meta.min})` });
+        if (desc.min !== undefined && (v < desc.min || v > desc.max)) out.push({ err: true, path, msg: `vượt giới hạn kiểu (${desc.min}..${desc.max})` });
+        return;
+      }
+      case "enum": {
+        const e = enm(desc.ref);
+        if (!e.flags && !e.members.some(m => m[0] === v)) out.push({ err: true, path, msg: `${v} không có trong enum ${e.name}` });
+        return;
+      }
+      case "list": if (Array.isArray(v)) v.forEach((x, i) => walk(desc.of, x, `${path}[${i}]`)); return;
+      case "dict": for (const [k, x] of Object.entries(v)) walk(desc.val, x, `${path}{${k}}`); return;
+      case "obj": {
+        const c = cls(desc.ref);
+        for (const f of c.fields) walk(f.type, v[f.json], path + "." + f.json, f);
+        const w = c.fields.find(f => f.type.k === "int" && W_NAMES.test(norm(f.json))), h = c.fields.find(f => f.type.k === "int" && H_NAMES.test(norm(f.json)));
+        if (w && h) for (const f of c.fields) if (isFlatGrid(f.type) && Array.isArray(v[f.json]) && v[f.json].length !== (v[w.json] | 0) * (v[h.json] | 0))
+          out.push({ err: false, path: path + "." + f.json, msg: `có ${v[f.json].length} phần tử, ${w.json}×${h.json} = ${(v[w.json] | 0) * (v[h.json] | 0)}` });
+        return;
+      }
+    }
+  };
+  walk(rootDesc, lv, "$");
+  return out;
+}
+
+/* ---------- side panels ---------- */
+function renderSide() {
+  const lv = S.levels[S.cur];
+  $("#jsonOut").textContent = lv ? JSON.stringify(levelJSON(lv), null, 2) : "";
+  const box = $("#tab-check"); box.textContent = "";
+  if (!lv) return;
+  const issues = validate(lv);
+  box.append(el("div", { class: "toolbar-row" }, el("strong", { text: `Level ${S.cur + 1}: ` }),
+    issues.length ? el("span", { text: `${issues.filter(x => x.err).length} lỗi, ${issues.filter(x => !x.err).length} cảnh báo` }) : el("span", { class: "ok", text: "✓ hợp lệ theo schema" })));
+  issues.slice(0, 300).forEach(x => box.append(el("div", { class: "issue" + (x.err ? " err" : "") }, el("code", { text: x.path }), " — ", x.msg)));
+  const all = S.levels.map((l, i) => [i, validate(l).filter(x => x.err).length]).filter(x => x[1]);
+  box.append(el("h4", { text: "Toàn bộ danh sách", style: { margin: "14px 0 6px" } }),
+    all.length ? el("div", {}, all.map(([i, n]) => el("div", { class: "sample" }, el("span", { class: "nm", text: `Level ${i + 1}: ${levelLabel(S.levels[i], i)}` }), el("span", { class: "score", text: n + " lỗi" }), el("button", { class: "small", text: "Mở", onclick: () => { S.cur = i; renderAll(); } }))))
+      : el("div", { class: "ok", text: `✓ ${S.levels.length} level không có lỗi` }));
+  $("#stat").textContent = `${S.levels.length} level · đang sửa #${S.cur + 1} · ${issues.length} vấn đề`;
+}
+function enumCard(key, tag) {
+  const e = enm(key);
+  return el("div", { class: "card" }, el("h4", {}, e.name, el("span", { class: "badge " + (e.src === "apk" ? "apk" : ""), text: tag }), e.flags ? el("span", { class: "badge", text: "Flags" }) : null),
+    el("div", { class: "ns", text: e.ns || "(global)" }),
+    el("div", { class: "members" }, e.members.map(([v, n]) => el("span", {}, el("i", { style: { background: colorFor(n, v) || "var(--border)" } }), `${n}=${v}`))));
+}
+function renderMechanics() {
+  const box = $("#tab-mech"); box.textContent = "";
+  box.append(el("p", { class: "hint", text: D.meta.has_apk_types ? "Enum và class lấy từ metadata IL2CPP của APK. Enum dùng trong LevelData xuất hiện đầu tiên; giá trị số là giá trị game đọc." : "Không có metadata APK — chỉ dùng kiểu trong LevelData.cs." }));
+  const cmp = D.comparison || [];
+  if (cmp.length) {
+    box.append(el("h4", { text: "Đối chiếu LevelData.cs với APK" }));
+    for (const c of cmp) {
+      const status = { match: ["ok", "✓ khớp"], differs: ["", "≠ khác"], not_in_apk: ["hint", "không có trong APK"] }[c.status];
+      const card = el("div", { class: "card" }, el("h4", {}, c.name, el("span", { class: "badge " + status[0], text: status[1] })), c.apk ? el("div", { class: "ns", text: "APK: " + c.apk }) : null);
+      for (const [k, label] of [["missing_in_leveldata", "APK có, LevelData thiếu"], ["extra_in_leveldata", "LevelData có, APK không có"], ["value_mismatch", "Lệch kiểu/giá trị"]])
+        if (c[k] && c[k].length) card.append(el("div", { class: "hint", text: label + ":" }), el("div", { class: "members" }, c[k].map(x => el("span", { text: x }))));
+      box.append(card);
+    }
+  }
+  if ((D.used_enums || []).length) { box.append(el("h4", { text: "Enum dùng trong LevelData" })); D.used_enums.forEach(k => box.append(enumCard(k, enm(k).src === "apk" ? "APK" : "LevelData"))); }
+  if ((D.mechanics || []).length) { box.append(el("h4", { text: "Enum cơ chế khác trong APK" })); D.mechanics.forEach(k => box.append(enumCard(k, "APK"))); }
+  if ((D.apk_level_classes || []).length) {
+    box.append(el("h4", { text: "Class level/board trong APK" }));
+    for (const c of D.apk_level_classes) box.append(el("div", { class: "card" }, el("h4", {}, c.name), el("div", { class: "ns", text: c.ns || "(global)" }),
+      el("div", { class: "members" }, c.fields.map(f => el("span", { text: `${f.name}: ${f.cs}` })))));
+  }
+  if ((D.unresolved || []).length) {
+    box.append(el("h4", { text: "Kiểu chưa xác định (ô JSON thô)" }));
+    D.unresolved.forEach(u => box.append(el("div", { class: "issue" }, el("code", { text: u.type }), " — dùng ở " + u.used_by.join(", "))));
+  }
+}
+const sampleScores = new Map();
+function sampleScore(i) { if (!sampleScores.has(i)) sampleScores.set(i, bestMatch(D.samples[i].data)); return sampleScores.get(i); }
+function filteredSamples() {
+  const q = $("#sampleFilter").value.trim().toLowerCase();
+  return D.samples.map((s, i) => [s, i]).filter(([s]) => !q || (s.group + " " + s.name).toLowerCase().includes(q));
+}
+function renderSamples() {
+  const box = $("#sampleList"); box.textContent = "";
+  if (!D.samples.length) { box.append(el("p", { class: "hint", text: "Job không có level trích xuất (levels.json). Bật “Trích dữ liệu level” khi phân tích APK để có level mẫu." })); return; }
+  const list = filteredSamples();
+  list.slice(0, 400).forEach(([s, i]) => {
+    const m = sampleScore(i);
+    box.append(el("div", { class: "sample", title: s.file + (m.path ? "\nkhớp tại " + m.path : "") },
+      el("span", { class: "nm" }, el("span", { class: "hint", text: s.group ? s.group + " / " : "" }), s.name),
+      el("span", { class: "score", text: Math.round(m.score * 100) + "%", style: { color: m.score >= .5 ? "var(--green)" : m.score > 0 ? "var(--amber)" : "var(--muted)" } }),
+      el("button", { class: "small ghost", text: "Xem", onclick: () => showDialog(s.group + " / " + s.name, s.data, "Nhập level này", () => importSample(i)) }),
+      el("button", { class: "small", text: "Nhập", onclick: () => importSample(i) })));
+  });
+}
+function importSample(i, quiet) {
+  const m = sampleScore(i), stats = { matched: 0, missing: 0, ignored: 0, bad: 0 };
+  const lv = coerce(rootDesc, m.value, stats);
+  S.levels.push(lv); S.cur = S.levels.length - 1;
+  if (!quiet) { changed(true); toast(`Đã nhập ${D.samples[i].name}: khớp ${stats.matched} trường, thiếu ${stats.missing} (dùng mặc định), bỏ ${stats.ignored} khóa lạ, ${stats.bad} giá trị sai kiểu.`); }
+  return stats;
+}
+function showDialog(title, data, action, run) {
+  $("#dlgTitle").textContent = title;
+  $("#dlgBody").textContent = JSON.stringify(data, null, 2).slice(0, 400000);
+  const b = $("#dlgAction"); b.textContent = action; b.style.display = action ? "" : "none";
+  b.onclick = () => { $("#dlg").close(); run && run(); };
+  $("#dlg").showModal();
+}
+
+/* ---------- render all ---------- */
+function renderAll() {
+  if (!S.levels.length) S.levels.push(makeObj(ROOT));
+  S.cur = Math.max(0, Math.min(S.cur, S.levels.length - 1));
+  const pane = $("#editorPane"), top = pane.scrollTop;
+  pane.textContent = "";
+  const lv = S.levels[S.cur];
+  const c = cls(ROOT);
+  pane.append(el("div", { class: "toolbar-row" }, el("h2", { style: { margin: 0, fontSize: "17px" }, text: `Level ${S.cur + 1}` }),
+    el("span", { class: "badge", text: c.name }), el("span", { class: "hint", text: levelLabel(lv, S.cur) }),
+    el("span", { style: { marginLeft: "auto" } }),
+    el("button", { class: "small", text: "Mở/đóng tất cả", onclick: () => { const ds = pane.querySelectorAll("details.obj"); const open = ![...ds].every(d => d.open); ds.forEach(d => { d.open = open; }); } }),
+    el("button", { class: "small danger", text: "Đặt lại mặc định", onclick: () => { if (confirm("Đặt lại level này về giá trị mặc định?")) { S.levels[S.cur] = makeObj(ROOT); changed(true); } } })));
+  pane.append(objEditor(rootDesc, () => S.levels[S.cur], x => { S.levels[S.cur] = x; }, "$", { top: true }));
+  pane.scrollTop = top;
+  renderList(); renderSide();
+}
+
+/* ---------- undo / autosave ---------- */
+let saveTimer = 0;
+function snapshot() { return JSON.stringify({ levels: S.levels, cur: S.cur }); }
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    const now = snapshot();
+    if (now !== S.last) { if (S.last) { S.undo.push(S.last); if (S.undo.length > 80) S.undo.shift(); } S.redo = []; S.last = now; }
+    const ok = store.set(KEY, JSON.stringify({ levels: S.levels, cur: S.cur, enumMode: S.enumMode }));
+    $("#saveState").textContent = ok ? "đã lưu nháp trong trình duyệt " + new Date().toLocaleTimeString() : "không lưu được nháp (trình duyệt chặn bộ nhớ) — hãy tải file";
+    updateUndo();
+  }, 350);
+}
+function restore(snap) { const d = JSON.parse(snap); S.levels = d.levels; S.cur = d.cur; S.last = snap; renderAll(); store.set(KEY, JSON.stringify({ levels: S.levels, cur: S.cur, enumMode: S.enumMode })); updateUndo(); }
+function undo() { clearTimeout(saveTimer); const now = snapshot(); if (now !== S.last) { S.undo.push(S.last); S.last = now; } if (!S.undo.length) return; S.redo.push(S.last); restore(S.undo.pop()); }
+function redo() { if (!S.redo.length) return; S.undo.push(S.last); restore(S.redo.pop()); }
+function updateUndo() { $("#btnUndo").disabled = !S.undo.length && snapshot() === S.last; $("#btnRedo").disabled = !S.redo.length; }
+
+/* ---------- import / export ---------- */
+function importJSON(text, name) {
+  let data; try { data = JSON.parse(text.replace(/^﻿/, "")); } catch (e) { toast(`${name}: không phải JSON hợp lệ (${e.message})`); return 0; }
+  let items;
+  if (Array.isArray(data)) items = data;
+  else if (data && typeof data === "object") {
+    const arrKey = Object.keys(data).find(k => Array.isArray(data[k]) && data[k].length && typeof data[k][0] === "object" && fit(ROOT, data[k][0]) > fit(ROOT, data));
+    items = arrKey && !cls(ROOT).fields.some(f => f.json === arrKey) ? data[arrKey] : [data];
+  } else items = [];
+  const stats = { matched: 0, missing: 0, ignored: 0, bad: 0 };
+  for (const it of items) S.levels.push(coerce(rootDesc, bestMatch(it).value, stats));
+  if (items.length) S.cur = S.levels.length - items.length;
+  toast(`${name}: nhập ${items.length} level · khớp ${stats.matched} trường, thiếu ${stats.missing}, bỏ ${stats.ignored} khóa lạ, ${stats.bad} giá trị sai kiểu`);
+  return items.length;
+}
+async function importFiles(files) {
+  let n = 0;
+  for (const f of files) n += importJSON(await f.text(), f.name);
+  if (n) { if (S.levels.length > n && isPristine(S.levels[0]) && S.levels.length - n === 1) { S.levels.shift(); S.cur = Math.max(0, S.cur - 1); } changed(true); }
+}
+const isPristine = lv => JSON.stringify(lv) === JSON.stringify(makeObj(ROOT));
+function download(name, data, type = "application/json") {
+  const blob = data instanceof Blob ? data : new Blob([data], { type });
+  const a = el("a", { href: URL.createObjectURL(blob), download: name }); document.body.append(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+const fileName = i => `Level ${i + 1}.json`;
+const crcTable = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = crcTable[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zip(files) {
+  const enc = new TextEncoder(), parts = [], central = []; let offset = 0;
+  const d = new Date(), time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (const f of files) {
+    const name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    [[0, 0x04034b50, 4], [4, 20, 2], [6, 0x0800, 2], [8, 0, 2], [10, time, 2], [12, date, 2], [14, crc, 4], [18, data.length, 4], [22, data.length, 4], [26, name.length, 2], [28, 0, 2]]
+      .forEach(([o, v, s]) => s === 4 ? h.setUint32(o, v, true) : h.setUint16(o, v, true));
+    parts.push(h.buffer, name, data);
+    const c = new DataView(new ArrayBuffer(46));
+    [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [8, 0x0800, 2], [10, 0, 2], [12, time, 2], [14, date, 2], [16, crc, 4], [20, data.length, 4], [24, data.length, 4], [28, name.length, 2], [30, 0, 2], [32, 0, 2], [34, 0, 2], [36, 0, 2], [38, 0, 4], [42, offset, 4]]
+      .forEach(([o, v, s]) => s === 4 ? c.setUint32(o, v, true) : c.setUint16(o, v, true));
+    central.push(c.buffer, name);
+    offset += 30 + name.length + data.length;
+  }
+  const size = central.reduce((n, b) => n + b.byteLength, 0);
+  const e = new DataView(new ArrayBuffer(22));
+  [[0, 0x06054b50, 4], [4, 0, 2], [6, 0, 2], [8, files.length, 2], [10, files.length, 2], [12, size, 4], [16, offset, 4], [20, 0, 2]]
+    .forEach(([o, v, s]) => s === 4 ? e.setUint32(o, v, true) : e.setUint16(o, v, true));
+  return new Blob([...parts, ...central, e.buffer], { type: "application/zip" });
+}
+function exportGuard() {
+  const bad = S.levels.map((l, i) => [i, validate(l).filter(x => x.err).length]).filter(x => x[1]);
+  return !bad.length || confirm(`${bad.length} level còn lỗi (vd. Level ${bad[0][0] + 1}). Vẫn xuất?`);
+}
+
+/* ---------- misc ---------- */
+let toastTimer = 0;
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.style.display = "none"; }, 5200); }
+function setTheme(t) { document.documentElement.dataset.theme = t; store.set("ducapk-level-editor:theme", t); }
+
+function boot() {
+  document.title = `${D.meta.title} · Level Editor`;
+  $("#title").textContent = `${D.meta.title} — Level Editor`;
+  $("#subtitle").textContent = [D.meta.apk && "APK: " + D.meta.apk, "LevelData: " + D.meta.leveldata.map(p => p.split(/[\\/]/).pop()).join(", "), "tạo " + D.meta.generated.replace("T", " ")].filter(Boolean).join("  ·  ");
+  const theme = store.get("ducapk-level-editor:theme") || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+  setTheme(theme);
+  if (Object.values(D.enums).some(e => e.string)) S.enumMode = "name";
+  const saved = store.get(KEY);
+  if (saved) { try { const d = JSON.parse(saved); if (Array.isArray(d.levels) && d.levels.length) { S.levels = d.levels; S.cur = d.cur | 0; S.enumMode = d.enumMode || S.enumMode; setTimeout(() => toast("Đã khôi phục bản nháp từ lần trước."), 300); } } catch (e) {} }
+  if (!S.levels.length) S.levels.push(makeObj(ROOT));
+  $("#enumMode").value = S.enumMode;
+  S.last = snapshot();
+
+  $("#enumMode").onchange = e => { S.enumMode = e.target.value; changed(false); };
+  $("#btnTheme").onclick = () => setTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+  $("#btnUndo").onclick = undo; $("#btnRedo").onclick = redo;
+  $("#btnNew").onclick = () => { S.levels.splice(S.cur + 1, 0, makeObj(ROOT)); S.cur++; changed(true); };
+  $("#btnDup").onclick = () => { S.levels.splice(S.cur + 1, 0, clone(S.levels[S.cur])); S.cur++; changed(true); };
+  $("#btnDel").onclick = () => { if (!confirm(`Xóa Level ${S.cur + 1}?`)) return; S.levels.splice(S.cur, 1); if (!S.levels.length) S.levels.push(makeObj(ROOT)); changed(true); };
+  $("#btnUp").onclick = () => move(S.cur, S.cur - 1);
+  $("#btnDown").onclick = () => move(S.cur, S.cur + 1);
+  $("#btnRenumber").onclick = () => {
+    const f = idField(); if (!f) return;
+    const start = prompt(`Gán ${f.json} theo thứ tự, bắt đầu từ:`, "1"); if (start === null || !/^-?\d+$/.test(start.trim())) return;
+    S.levels.forEach((lv, i) => { lv[f.json] = +start + i; }); changed(true);
+  };
+  $("#btnImport").onclick = () => $("#fileInput").click();
+  $("#fileInput").onchange = e => { importFiles([...e.target.files]); e.target.value = ""; };
+  $("#btnExportOne").onclick = () => { if (exportGuard()) download(fileName(S.cur), JSON.stringify(levelJSON(S.levels[S.cur]), null, 2)); };
+  $("#btnExportZip").onclick = () => { if (exportGuard()) download(`${D.meta.title}_levels.zip`, zip(S.levels.map((l, i) => ({ name: fileName(i), text: JSON.stringify(levelJSON(l), null, 2) })))); };
+  $("#btnExportArray").onclick = () => { if (exportGuard()) download(`${D.meta.title}_levels.json`, JSON.stringify(S.levels.map(levelJSON), null, 2)); };
+  $("#btnCopy").onclick = async () => { try { await navigator.clipboard.writeText($("#jsonOut").textContent); toast("Đã sao chép JSON."); } catch (e) { toast("Trình duyệt chặn clipboard; hãy bôi đen và sao chép."); } };
+  $("#dlgClose").onclick = () => $("#dlg").close();
+  $("#sampleFilter").oninput = renderSamples;
+  $("#btnImportAllSamples").onclick = () => {
+    const list = filteredSamples(); if (!list.length || !confirm(`Nhập ${list.length} level từ APK vào cuối danh sách?`)) return;
+    const pristine = S.levels.length === 1 && isPristine(S.levels[0]);
+    const total = { matched: 0, missing: 0, ignored: 0, bad: 0 };
+    for (const [, i] of list) { const s = importSample(i, true); for (const k in total) total[k] += s[k]; }
+    if (pristine) { S.levels.shift(); S.cur = Math.max(0, S.cur - 1); }
+    changed(true); toast(`Đã nhập ${list.length} level: khớp ${total.matched} trường, thiếu ${total.missing}, bỏ ${total.ignored} khóa lạ.`);
+  };
+  document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+    document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+    document.querySelectorAll(".tab-body").forEach(x => x.classList.toggle("on", x.id === "tab-" + b.dataset.tab));
+  });
+  document.addEventListener("keydown", e => {
+    if (!(e.ctrlKey || e.metaKey) || ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName) && document.activeElement.type !== "checkbox") return;
+    if (e.key.toLowerCase() === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey)) { e.preventDefault(); redo(); }
+  });
+  document.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); document.body.classList.add("dropping"); } });
+  document.addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dropping"); });
+  document.addEventListener("drop", e => { if (!e.dataTransfer.files.length) return; e.preventDefault(); document.body.classList.remove("dropping"); importFiles([...e.dataTransfer.files].filter(f => /\.json$/i.test(f.name))); });
+  renderMechanics(); renderSamples(); renderAll(); updateUndo();
+}
+boot();
+</script>
+</body>
+</html>

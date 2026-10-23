@@ -1,0 +1,30 @@
+# Local Python state and environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Downloaded tools, reference source, Ghidra projects and analysis results
+/tools/
+/knowledge/ghidra_upstream/
+/projects/
+/output/
+/_probe*/
+/_ghidra*/
+/_native_scan/
+
+# Android packages and native binaries
+*.apk
+*.xapk
+*.apks
+*.so
+*.dll
+*.exe
+
+# Local credentials and editor settings
+.env
+.env.*
+!.env.example
+/.claude/
+/.codex/
