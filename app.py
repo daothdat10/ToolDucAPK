@@ -787,7 +787,10 @@ class DucAPKApp(TkinterDnD.Tk):
         self._note(note, "Chọn APK: DucAPK đọc metadata IL2CPP và trích level (không giải mã thân hàm) vào một job mới "
                          "trong thư mục kết quả. Chọn job đã phân tích để dùng lại dump.cs và levels.json. "
                          "Kiểu LevelData.cs không khai báo (enum, class con) được lấy từ metadata APK. "
-                         "Để trống FILE HTML thì lưu levelEditor.html trong job (hoặc cạnh LevelData.cs).")
+                         "Để trống FILE HTML thì lưu levelEditor.html trong job (hoặc cạnh LevelData.cs). "
+                         "Bàn chơi tự đoán theo field; chỉnh trong ⚙ Thiết lập bàn chơi rồi xuất levelEditor.profile.json "
+                         "đặt cạnh LevelData.cs để lần sau tool tự dùng. Chưa có LevelData.cs: để trống ô đó, tool "
+                         "tự tìm class level trong job và sinh leveldata_from_apk/LevelData.cs.")
 
         card, run = self._card(page, "2", "Tạo editor", "Pink")
         card.pack(fill="both", expand=True, pady=(14, 4))
@@ -901,16 +904,20 @@ class DucAPKApp(TkinterDnD.Tk):
         if self.le_worker and self.le_worker.is_alive():
             return
         cs_text = self.le_cs_var.get().strip()
-        if not cs_text or not leveldata_sources(Path(cs_text)):
-            messagebox.showinfo("Thiếu LevelData", "Chọn file LevelData.cs (hoặc thư mục chứa các file .cs).")
-            return
         inputs = self.le_inputs or [Path(part.strip()) for part in self.le_source_var.get().split(";")
                                     if part.strip()]
+        if cs_text and not leveldata_sources(Path(cs_text)):
+            messagebox.showinfo("Thiếu LevelData", f"Không có file .cs trong {cs_text}.")
+            return
+        if not cs_text and not inputs:
+            messagebox.showinfo("Thiếu LevelData", "Chọn LevelData.cs, hoặc chọn APK/job để tool tự suy ra LevelData "
+                                                   "từ metadata của game.")
+            return
         missing = [path for path in inputs if not path.exists()]
         if missing:
             messagebox.showerror("Không tìm thấy", "\n".join(str(path) for path in missing))
             return
-        if not inputs and not messagebox.askyesno(
+        if cs_text and not inputs and not messagebox.askyesno(
                 "Chưa chọn APK", "Không có APK/job: editor chỉ dùng LevelData.cs, không có enum/level "
                                  "từ game. Tiếp tục?"):
             return
@@ -921,11 +928,11 @@ class DucAPKApp(TkinterDnD.Tk):
         self.le_status_var.set("Đang chuẩn bị…")
         self.le_worker = threading.Thread(
             target=self._run_level_editor,
-            args=(inputs, Path(cs_text), self.le_root_var.get() or None, output,
+            args=(inputs, Path(cs_text) if cs_text else None, self.le_root_var.get() or None, output,
                   Path(self.output_var.get())), daemon=True)
         self.le_worker.start()
 
-    def _run_level_editor(self, inputs: list[Path], leveldata: Path, root: str | None,
+    def _run_level_editor(self, inputs: list[Path], leveldata: Path | None, root: str | None,
                           output: Path | None, output_root: Path):
         emit = lambda message: self.events.put(("le_log", message))
         try:
@@ -1325,6 +1332,11 @@ class DucAPKApp(TkinterDnD.Tk):
                     self.le_folder_btn.configure(state="normal")
                     if job is not None:
                         self.job = job
+                    if report["inferred_candidates"]:
+                        self.le_root_combo.configure(values=[k.split(".")[-1] for k in report["inferred_candidates"]])
+                        self.le_root_var.set(report["root"].split(".")[-1])
+                        self._le_message(f"LevelData suy ra từ APK: {report['leveldata']}. Đoán sai class level thì chọn "
+                                         "class khác ở CLASS GỐC (để trống LEVELDATA) rồi tạo lại.")
                     self.phase_var.set("HOÀN TẤT")
                     self._le_message(
                         f"HOÀN TẤT: {report['classes']} class, {report['enums']} enum "

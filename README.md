@@ -106,7 +106,7 @@ Mỗi file tối đa 240.000 byte. Kết quả do AI tạo ra cần người ki�
 ## 05 Level Editor
 
 1. **APK / JOB**: chọn APK hoặc một job đã phân tích. Có thể kéo thả APK, thư mục job hoặc file `.cs` vào tab.
-2. **LEVELDATA .CS**: chọn file hoặc thư mục chứa `LevelData.cs`.
+2. **LEVELDATA .CS**: chọn file hoặc thư mục chứa `LevelData.cs`. Chưa có thì để trống: tool tìm class level trong job (dump.cs), sinh `leveldata_from_apk/LevelData.cs` trong job rồi tạo editor từ đó. Nếu đoán sai class, chọn class khác ở **CLASS GỐC** và tạo lại.
 3. **CLASS GỐC**: tên class đại diện cho một level, mặc định là `LevelData`.
 4. Bấm **TẠO LEVEL EDITOR**. Nếu để trống ô **FILE HTML**, file được lưu trong thư mục job.
 
@@ -114,6 +114,10 @@ File `levelEditor.html` chạy offline trong trình duyệt:
 
 - Thêm, nhân bản, xóa level, kéo thả để sắp xếp lại thứ tự.
 - Form chỉnh sửa và bảng lưới được tạo tự động theo `LevelData.cs`.
+- **Bàn chơi**: editor tự đoán cách vẽ level từ tên field (kích thước lưới, các lớp: tường, hố, object, snake, ô nền…). Bấm **⚙ Thiết lập bàn chơi** để sửa bằng menu chọn, không cần viết code.
+- Bấm **Xuất levelEditor.profile.json** và đặt file cạnh `LevelData.cs`; lần tạo editor sau sẽ dùng lại thiết lập này. Có thể chép file sang game cùng thể loại rồi chỉnh tên field.
+- Trên bàn chơi: chọn lớp rồi đặt/vẽ/tô; **➤ Chọn** để sửa hoặc kéo di chuyển; chuột phải để xóa. Cơ chế của game (lấy từ APK) được thêm cho từng object, kèm form tham số.
+- Game kiểu Gecko/Snake Out (luật "snake ra hố cùng màu") có thêm **▶ Chơi thử** và **⚙ Kiểm tra giải được**.
 - Tab **Level từ APK**: bấm **Nhập** để lấy level có sẵn trong game.
 - Tab **Kiểm tra**: báo các giá trị không hợp lệ.
 - Xuất từng level (`Level N.json`), xuất tất cả thành `.zip` hoặc thành một file JSON chứa mảng level.

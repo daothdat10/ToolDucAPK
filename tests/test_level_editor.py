@@ -135,6 +135,210 @@ class CSharpParserTests(unittest.TestCase):
         self.assertEqual(fruit["members"], [(0, "Apple"), (1, "Banana"), (7, "Bomb")])
 
 
+SNAKE_MODEL = '''using System.Collections.Generic;
+[System.Serializable]
+public class LevelModel
+{
+    public int width = 6;
+    public int height = 8;
+    public List<Coord> blockedCells = new List<Coord>();
+    public List<HoleInfo> holeInfos = new List<HoleInfo>();
+    public List<SnakeInfo> snakeInfos = new List<SnakeInfo>();
+    public List<LinkInfo> links = new List<LinkInfo>();
+}
+[System.Serializable]
+public class SnakeInfo
+{
+    public SnakeInfo() { colorID = new List<int>(); }
+    public int Length { get { return bodyPosition.Count; } }
+    public int id;
+    public List<int> colorID;
+    public List<Coord> bodyPosition;
+    public List<MechanicInfo> mechanics;
+}
+[System.Serializable]
+public class HoleInfo { public int id; public int colorID; public Coord position; public bool singleEntry; public List<MechanicInfo> mechanics; }
+[System.Serializable]
+public class LinkInfo { public LinkKind kind; public int sourceId; public int targetId; }
+[System.Serializable]
+public class MechanicInfo { public MechanicKind kind; public string payloadJson = "{}"; }
+[System.Serializable]
+public struct Coord { public int x; public int y; }
+public enum LinkKind { Connected = 1, Tied = 2 }
+public enum MechanicKind { StoneWall = 1, BombSnake = 11, StackedSnake = 7, TwoSidedHole = 26 }
+'''
+
+SNAKE_DUMP = '''// Namespace: Game
+[Serializable]
+public class BombSnakeLevelData // TypeDefIndex: 1
+{
+	// Fields
+	public int timeToExplode; // 0x10
+}
+
+// Namespace: Game
+[Serializable]
+public class NestedSnakeLevelData // TypeDefIndex: 2
+{
+	// Fields
+	public int[] insideSnakeCatalogIds; // 0x10
+}
+
+// Namespace: Game
+public abstract class NestedSnakeLevelDataAdapterBase : LevelDataAdapterVersionOneBase // TypeDefIndex: 3
+{
+	// Methods
+	// RVA: 0x1 Offset: 0x1 VA: 0x1
+	protected NestedSnakeLevelData Parse(LevelComponentData _levelComponentData) { }
+}
+
+// Namespace: Game
+public class StackedSnakeLevelDataAdapter : NestedSnakeLevelDataAdapterBase, ILevelLiveStateAdapter // TypeDefIndex: 4
+{
+	// Methods
+	public override LevelDataKind GetKind() { }
+}
+'''
+
+
+class BoardProfileTests(unittest.TestCase):
+    def build(self, temporary: Path, profile=None):
+        source = temporary / "LevelModel.cs"
+        source.write_text(SNAKE_MODEL, encoding="utf-8")
+        if profile is not None:
+            (temporary / level_editor.PROFILE_FILE_NAME).write_text(json.dumps(profile), encoding="utf-8")
+        job = temporary / "job"
+        (job / "il2cppdumper").mkdir(parents=True, exist_ok=True)
+        (job / "il2cppdumper" / "dump.cs").write_text(SNAKE_DUMP, encoding="utf-8")
+        output = temporary / "editor.html"
+        logs = []
+        level_editor.build_level_editor(source, output, job, None, logs.append)
+        html = output.read_text(encoding="utf-8")
+        return json.loads(re.search(r"const D = (.*?);\nconst \$", html, re.S).group(1)), logs
+
+    def test_mechanic_catalog_payloads_come_from_apk_classes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data, logs = self.build(Path(temporary))
+        self.assertIsNone(data["saved_profile"])
+        catalog = {m["name"]: m for m in data["mechanic_catalogs"]["MechanicKind"]}
+        self.assertEqual(catalog["BombSnake"]["target"], "snake")
+        self.assertEqual(catalog["TwoSidedHole"]["target"], "hole")
+        self.assertEqual(catalog["StoneWall"]["target"], "entity")
+        bomb = data["classes"][catalog["BombSnake"]["payload"]]
+        self.assertEqual([f["json"] for f in bomb["fields"]], ["timeToExplode"])
+        # StackedSnake has no StackedSnakeLevelData; the adapter's base class parses NestedSnakeLevelData.
+        self.assertEqual(catalog["StackedSnake"]["payload_class"], "Game.NestedSnakeLevelData")
+        self.assertNotIn("payload", catalog["TwoSidedHole"])
+        self.assertTrue(any("tự đoán bàn chơi" in line for line in logs))
+
+    def test_saved_profile_next_to_leveldata_is_embedded(self):
+        profile = {"version": 1, "grid": {"width": "width", "height": "height"},
+                   "layers": [{"name": "Rắn", "list": "snakeInfos", "mode": "path", "path": "bodyPosition"}]}
+        with tempfile.TemporaryDirectory() as temporary:
+            data, logs = self.build(Path(temporary), profile)
+        self.assertEqual(data["saved_profile"], profile)
+        self.assertTrue(any("Dùng profile bàn chơi đã lưu" in line for line in logs))
+
+    def test_invalid_saved_profile_is_reported(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaises(level_editor.LevelEditorError):
+                self.build(Path(temporary), {"grid": {}})
+
+
+INFER_DUMP = '''// Namespace: Game
+public class LevelManager : MonoBehaviour // TypeDefIndex: 1
+{
+	public LevelDefinition current; // 0x18
+	public List<LevelDefinition> all; // 0x20
+}
+
+// Namespace: Game
+[Serializable]
+public class LevelDefinition // TypeDefIndex: 2
+{
+	public int schemaVersion; // 0x10
+	public LevelGridData[] grids; // 0x18
+	public LevelSnakeData[] snakes; // 0x20
+	[JsonProperty(DefaultValueHandling = 1)]
+	public bool isBoardCapture; // 0x28
+	[JsonProperty(NullValueHandling = 1)]
+	public Nullable<int> typeShuffleSeed; // 0x2C
+	public static int Count; // 0x0
+}
+
+// Namespace: Game
+[Serializable]
+public class LevelGridData // TypeDefIndex: 3
+{
+	public int width; // 0x10
+	public int height; // 0x14
+	public LevelGridKind kind; // 0x18
+}
+
+// Namespace: Game
+[Serializable]
+public class LevelSnakeData // TypeDefIndex: 4
+{
+	public int entityId; // 0x10
+	public LevelGridPositionData[] segmentsHeadToTail; // 0x18
+}
+
+// Namespace: Game
+[Serializable]
+public class LevelGridPositionData // TypeDefIndex: 5
+{
+	public int x; // 0x10
+	public int y; // 0x14
+}
+
+// Namespace: Game
+public enum LevelGridKind // TypeDefIndex: 6
+{
+	public int value__; // 0x0
+	public const LevelGridKind Main = 1;
+	public const LevelGridKind ColorFloor = 2;
+}
+'''
+
+
+class InferLevelDataTests(unittest.TestCase):
+    def build(self, temporary: Path, root=None):
+        job = temporary / "job"
+        (job / "il2cppdumper").mkdir(parents=True)
+        (job / "il2cppdumper" / "dump.cs").write_text(INFER_DUMP, encoding="utf-8")
+        logs = []
+        report = level_editor.build_level_editor(None, temporary / "levelEditor.html", job, root, logs.append)
+        source = (job / level_editor.APK_LEVELDATA_DIR / "LevelData.cs").read_text(encoding="utf-8")
+        return report, source, logs
+
+    def test_level_class_is_found_in_apk_and_written_as_leveldata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            report, source, logs = self.build(Path(temporary))
+        self.assertEqual(report["root"], "LevelEditorData.LevelDefinition")
+        self.assertEqual(report["inferred_candidates"][0], "Game.LevelDefinition")
+        self.assertNotIn("Game.LevelManager", report["inferred_candidates"][:1])
+        self.assertIn("public LevelGridData[] grids;", source)
+        self.assertIn("public LevelGridPositionData[] segmentsHeadToTail;", source)
+        self.assertIn("public int? typeShuffleSeed;", source)
+        self.assertIn("public enum LevelGridKind", source)
+        self.assertNotIn("Count", source)
+        # JsonProperty options are not JSON names
+        self.assertNotIn("DefaultValueHandling", source)
+        self.assertTrue(any("Khớp APK: LevelDefinition" in line for line in logs))
+        self.assertFalse(any(line.startswith("Khác APK") for line in logs))
+
+    def test_root_override_picks_another_apk_class(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            report, source, logs = self.build(Path(temporary), "LevelSnakeData")
+        self.assertEqual(report["root"], "LevelEditorData.LevelSnakeData")
+        self.assertNotIn("class LevelDefinition", source)
+
+    def test_without_leveldata_or_job_is_an_error(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaises(level_editor.LevelEditorError):
+                level_editor.build_level_editor(None, Path(temporary) / "x.html", None)
+
+
 class BuildEditorTests(unittest.TestCase):
     def build(self, temporary: Path, root=None):
         source = temporary / "LevelData.cs"

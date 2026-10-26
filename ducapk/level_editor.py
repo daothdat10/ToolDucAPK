@@ -544,6 +544,14 @@ class TypeLibrary:
         return sorted({block["names"][0].split(".")[-1] for block in self._blocks
                        if block["kind"] in {"class", "struct"} and pattern.search(block["names"][0])})
 
+    def block_texts(self, short: str) -> list[str]:
+        """Raw declaration text (including method signatures) of types named `short`."""
+        texts = []
+        for block_id in self._block_index.get(short, []):
+            block = self._blocks[block_id]
+            texts.append(block["text"][block["start"]:block["end"]])
+        return texts
+
     @property
     def indexed(self) -> int:
         return len(self._blocks) + len(self.types)
@@ -801,7 +809,7 @@ def _json_name(field: dict[str, Any]) -> str:
     for attribute in field["attributes"]:
         if attribute["name"] in {"JsonProperty", "JsonPropertyName"} and attribute["args"]:
             first = attribute["args"][0]
-            if isinstance(first, str) and not first.startswith(("PropertyName", "Order", "Required")):
+            if isinstance(first, str) and not re.match(r"[A-Za-z_]\w*\s*=", first):
                 return first
             for arg in attribute["args"]:
                 match = re.match(r"PropertyName\s*=\s*\"(.*)\"", str(arg))
@@ -914,8 +922,91 @@ def _apk_level_classes(apk: TypeLibrary) -> list[dict[str, Any]]:
     return result
 
 
+_LEVEL_SCOPE_KINDS = re.compile(r"Grid|Floor|Ropes|Cells|Walls|TileGenerator|HandTutorial")
+PROFILE_FILE_NAME = "levelEditor.profile.json"
+
+
+def _mechanic_kind_enums(builder: SchemaBuilder) -> list[str]:
+    """Enums used as `kind` of a class that also carries a JSON string payload (MechanicInfo-like)."""
+    found = []
+    for item in builder.classes.values():
+        fields = item["fields"]
+        kinds = [f for f in fields if f["type"]["k"] == "enum" and re.search(r"kind|type", f["json"], re.I)]
+        payloads = [f for f in fields if f["type"]["k"] in {"string", "raw"}
+                    and re.search(r"payload|json|data|param", f["json"], re.I)]
+        if kinds and payloads and kinds[0]["type"]["ref"] not in found:
+            found.append(kinds[0]["type"]["ref"])
+    return found
+
+
+def _payload_class_name(apk: TypeLibrary, kind_name: str) -> str | None:
+    """Find the class the game parses for a mechanic kind, via its LevelDataAdapter."""
+    direct = f"{kind_name}LevelData"
+    if any(t["kind"] == "class" for t in apk.candidates(direct)):
+        return direct
+    seen: set[str] = set()
+    queue = [f"{kind_name}LevelDataAdapter"]
+    while queue:
+        adapter = queue.pop(0)
+        if adapter in seen:
+            continue
+        seen.add(adapter)
+        for text in apk.block_texts(adapter):
+            parsed = [name for name in re.findall(r"\b(\w+LevelData)\s+Parse\w*\s*\(", text)
+                      if "Live" not in name]
+            if parsed:
+                return parsed[0]
+            base = re.search(r"class\s+\w+\s*:\s*(\w+)", text)
+            if base:
+                queue.append(base.group(1))
+    return None
+
+
+
+def _mechanic_catalog(builder: SchemaBuilder, apk: TypeLibrary, enum_key: str) -> list[dict[str, Any]]:
+    catalog = []
+    for value, name in builder.enums[enum_key]["members"]:
+        entry: dict[str, Any] = {"value": value, "name": name}
+        if "Snake" in name:
+            entry["target"] = "snake"
+        elif "Hole" in name:
+            entry["target"] = "hole"
+        elif _LEVEL_SCOPE_KINDS.search(name):
+            entry["target"] = "level"
+        elif name == "FrozenState":
+            entry["target"] = "snake hole"
+        else:
+            entry["target"] = "entity"
+        payload_name = _payload_class_name(apk, name) if apk.indexed else None
+        if payload_name:
+            item = _pick(apk.candidates(payload_name), "Game")
+            if item is not None and item["kind"] == "class":
+                entry["payload"] = builder._class(item)
+                entry["payload_class"] = item["key"]
+        catalog.append(entry)
+    while builder._pending:
+        item = builder._pending.pop()
+        builder.classes[item["key"]]["fields"] = builder._fields_with_bases(item, set())
+    return catalog
+
+
+
+def load_saved_profile(leveldata: Path) -> tuple[dict[str, Any] | None, Path]:
+    """A board profile saved from the editor next to LevelData.cs is reused on the next build."""
+    folder = leveldata if leveldata.is_dir() else leveldata.parent
+    path = folder / PROFILE_FILE_NAME
+    try:
+        profile = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None, path
+    if not isinstance(profile, dict) or not isinstance(profile.get("layers"), list):
+        raise LevelEditorError(f"{path} không phải profile bàn chơi hợp lệ (thiếu 'layers').")
+    return profile, path
+
+
 def _normalize_type(text: str) -> str:
     text = re.sub(r"\s+|global::|`\d+", "", text)
+    text = re.sub(r"(?:System\.)?Nullable<(.+)>$", r"\1?", text)
     return re.sub(r"[\w]+\.", "", text).lower()
 
 
@@ -993,6 +1084,141 @@ def _sample_levels(job: Path | None, emit) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------- entry points
+_ROOT_NAME = re.compile(r"^(?:Level|Stage|Puzzle|Board)(?:Data|Definition|Model|Config|Info|Design|Layout|Asset|Json|Dto)?$")
+_NOT_ROOT = re.compile(r"Manager|Controller|View|UI|Panel|Popup|Button|Adapter|Loader|Service|Presenter|Handler|"
+                       r"Factory|System|Provider|Helper|Util|Tracker|Analytic|Event|Reward|Progress|Select|Scene|"
+                       r"Behaviour|Test|Editor|Debug|Cache|Request|Response|Result|State|Session|Saver|Repository|"
+                       r"Settings|Metadata|Camera|Source|Item|Cell|Text|Tutorial|Unlock|Map$|Path$")
+_GRID_FIELD = re.compile(r"^(width|height|cols?|columns?|rows?|grids?|cells?|tiles?|board|map|size)$", re.I)
+APK_LEVELDATA_DIR = "leveldata_from_apk"
+
+
+def apk_root_candidates(apk: TypeLibrary, limit: int = 12) -> list[str]:
+    """Game classes in the APK that look like the serialized data of one level, best first."""
+    scored: list[tuple[int, str]] = []
+    for name in apk.class_block_names(re.compile(r"Level|Stage|Puzzle|Board", re.I)):
+        for item in apk.candidates(name):
+            if item["kind"] not in {"class", "struct"} or category_for_class(item["key"]) != "game":
+                continue
+            fields = [f for f in item["fields"] if _is_serialized(f)]
+            if len(fields) < 2:
+                continue
+            bases = " ".join(item.get("bases", [])).lower()
+            lists = sum(1 for f in fields if re.search(r"\[\]|List<", f["type"]))
+            score = 8 if _ROOT_NAME.match(item["name"]) else 2 if "level" in item["name"].lower() else 0
+            score -= 8 if _NOT_ROOT.search(item["name"]) else 0
+            score -= 5 if "monobehaviour" in bases else 0
+            score += min(lists, 5) + (3 if any(_GRID_FIELD.match(f["name"]) for f in fields) else 0)
+            score += min(len(fields), 12) // 4
+            if score > 0:
+                scored.append((score, item["key"]))
+    scored.sort(key=lambda pair: (-pair[0], pair[1]))
+    return [key for _, key in scored[:limit]]
+
+
+def _cs_type(description: dict[str, Any], builder: "SchemaBuilder") -> str:
+    kind = description["k"]
+    if kind == "list":
+        inner = _cs_type(description["of"], builder)
+        rank = description.get("md", 1)
+        text = f"{inner}[]" if rank == 1 else f"{inner}[{',' * (rank - 1)}]"
+    elif kind == "dict":
+        text = f"Dictionary<{_cs_type(description['key'], builder)}, {_cs_type(description['val'], builder)}>"
+    elif kind == "obj":
+        text = builder.classes[description["ref"]]["name"]
+    elif kind == "enum":
+        text = builder.enums[description["ref"]]["name"]
+    elif kind == "int":
+        text = {(-128, 127): "sbyte", (0, 255): "byte", (-32768, 32767): "short", (0, 65535): "ushort",
+                (0, 4294967295): "uint"}.get((description.get("min"), description.get("max")),
+                                              "long" if (description.get("max") or 0) > 2147483647 else "int")
+    elif kind == "float":
+        text = "float"
+    elif kind == "raw":
+        text = {"jobject": "JObject", "jtoken": "JToken", "jarray": "JArray"}.get(description["cs"].lower(), "object")
+    else:
+        text = {"string": "string", "bool": "bool", "char": "char"}[kind]
+    return text + "?" if description.get("nullable") and kind in {"int", "float", "bool", "enum", "char"} else text
+
+
+def render_leveldata_cs(builder: "SchemaBuilder", root_key: str, source: str) -> str:
+    """C# for the level root and every class/enum it reaches, ready to drop into a Unity project."""
+    body: list[str] = []
+    for key in [root_key] + sorted(k for k in builder.classes if k != root_key):
+        item = builder.classes[key]
+        if item["src"] == "unity":
+            continue
+        kind = "struct" if item["kind"] == "struct" else "class"
+        body += [f"    // {item['ns'] + '.' if item['ns'] else ''}{item['name']}",
+                 "    [Serializable]", f"    public {kind} {item['name']}", "    {"]
+        for field in item["fields"]:
+            if field["json"] != field["name"]:
+                body.append(f'        [JsonProperty("{field["json"]}")]')
+            body.append(f"        public {_cs_type(field['type'], builder)} {field['name']};")
+        body += ["    }", ""]
+    for key in sorted(builder.enums):
+        item = builder.enums[key]
+        body.append(f"    // {item['ns'] + '.' if item['ns'] else ''}{item['name']}")
+        if item["flags"]:
+            body.append("    [Flags]")
+        if item["string"]:
+            body.append("    [JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]")
+        body += [f"    public enum {item['name']}", "    {",
+                 ",\n".join(f"        {name} = {value}" for value, name in item["members"]), "    }", ""]
+    text = "\n".join(body).rstrip()
+    usings = ["using System;", "using System.Collections.Generic;"]
+    if any(c["src"] == "unity" for c in builder.classes.values()):
+        usings.append("using UnityEngine;")
+    if re.search(r"JsonProperty|JsonConverter", text):
+        usings.append("using Newtonsoft.Json;")
+    if re.search(r"\bJ(Object|Token|Array)\b", text):
+        usings.append("using Newtonsoft.Json.Linq;")
+    header = (f"// Sinh tự động bởi DucAPK từ metadata của {source}.\n"
+              "// Chỉ gồm field được serialize; tên kiểu giữ như trong game, gộp vào namespace LevelEditorData.\n"
+              "// Kiểm tra và chỉnh trước khi dùng trong project của bạn.\n")
+    return header + "\n".join(usings) + "\n\nnamespace LevelEditorData\n{\n" + text + "\n}\n"
+
+
+def infer_leveldata(job: Path, root: str | None, emit, cancel: threading.Event | None = None) -> Path:
+    """No LevelData.cs yet: pick the level class from the analyzed job and write LevelData.cs for it."""
+    cancel = cancel or threading.Event()
+    ensure_cpp2il_types(job, emit, cancel)
+    apk = _load_apk_library(job, emit)
+    if not apk.indexed:
+        raise LevelEditorError("Job chưa có dump.cs/Cpp2IL để suy ra LevelData; phân tích APK trước.")
+    candidates = apk_root_candidates(apk)
+    if root:
+        wanted = [key for key in candidates if key == root or key.split(".")[-1] == root]
+        wanted = wanted or [item["key"] for item in apk.candidates(root.split(".")[-1])
+                            if item["kind"] in {"class", "struct"}]
+        if wanted:
+            root_key = wanted[0]
+        elif candidates:
+            emit(f"Không thấy class '{root}' trong metadata APK; dùng {candidates[0]}.")
+            root_key = candidates[0]
+        else:
+            raise LevelEditorError(f"Không thấy class '{root}' trong metadata APK.")
+    elif candidates:
+        root_key = candidates[0]
+    else:
+        raise LevelEditorError("Không đoán được class level trong APK; nhập tên vào CLASS GỐC (vd. LevelData).")
+    if candidates:
+        emit("Class level đoán từ APK: " + ", ".join(k.split(".")[-1] for k in candidates[:6])
+             + (" …" if len(candidates) > 6 else ""))
+    if cancel.is_set():
+        raise LevelEditorError("Đã dừng.")
+    builder = SchemaBuilder(TypeLibrary("user"), apk)
+    root_key = builder.build(apk.types[root_key])
+    folder = job / APK_LEVELDATA_DIR
+    folder.mkdir(exist_ok=True)
+    output = folder / "LevelData.cs"
+    output.write_text(render_leveldata_cs(builder, root_key, job.name), encoding="utf-8")
+    (folder / "candidates.txt").write_text("\n".join(candidates) + "\n", encoding="utf-8")
+    emit(f"Đã suy ra LevelData từ APK: class gốc {root_key}, {len(builder.classes)} class, "
+         f"{len(builder.enums)} enum → {output}")
+    return output
+
+
 def read_leveldata(paths: list[Path]) -> TypeLibrary:
     library = TypeLibrary("user")
     for path in paths:
@@ -1022,10 +1248,17 @@ def root_candidates(library: TypeLibrary) -> list[str]:
     return [item["key"] for item in sorted(classes, key=rank)]
 
 
-def build_level_editor(leveldata: Path, output_html: Path, job: Path | None = None,
+def build_level_editor(leveldata: Path | None, output_html: Path, job: Path | None = None,
                        root: str | None = None, emit=print,
                        cancel: threading.Event | None = None) -> dict[str, Any]:
     cancel = cancel or threading.Event()
+    inferred: list[str] = []
+    if leveldata is None:
+        if job is None:
+            raise LevelEditorError("Chưa có LevelData.cs: chọn APK hoặc job để tool tự suy ra.")
+        leveldata = infer_leveldata(job, root, emit, cancel)
+        inferred = (job / APK_LEVELDATA_DIR / "candidates.txt").read_text(encoding="utf-8").split()
+        root = None
     sources = leveldata_sources(leveldata)
     if not sources:
         raise LevelEditorError("Không tìm thấy file .cs LevelData.")
@@ -1067,6 +1300,15 @@ def build_level_editor(leveldata: Path, output_html: Path, job: Path | None = No
     mechanic_keys = _mechanic_enums(builder, apk, focus) if apk.indexed else []
     level_classes = _apk_level_classes(apk) if apk.indexed else []
     samples = _sample_levels(job, emit)
+    mechanic_catalogs = {key: _mechanic_catalog(builder, apk, key) for key in _mechanic_kind_enums(builder)}
+    for key, catalog in mechanic_catalogs.items():
+        mapped = sum(1 for entry in catalog if "payload" in entry)
+        emit(f"Cơ chế {builder.enums[key]['name']}: {len(catalog)} loại, {mapped} loại có tham số lấy từ class của game.")
+    saved_profile, profile_path = load_saved_profile(leveldata)
+    if saved_profile:
+        emit(f"Dùng profile bàn chơi đã lưu: {profile_path}")
+    else:
+        emit(f"Chưa có {PROFILE_FILE_NAME} cạnh LevelData; editor tự đoán bàn chơi, chỉnh trong ⚙ Thiết lập bàn chơi.")
 
     apk_name = ""
     if job is not None:
@@ -1084,6 +1326,7 @@ def build_level_editor(leveldata: Path, output_html: Path, job: Path | None = No
             "generated": datetime.now().isoformat(timespec="seconds"),
             "schema_id": hashlib.sha1(schema_text.encode("utf-8")).hexdigest()[:16],
             "has_apk_types": bool(apk.indexed),
+            "inferred": bool(inferred),
         },
         "root": root_key,
         "classes": builder.classes,
@@ -1095,6 +1338,9 @@ def build_level_editor(leveldata: Path, output_html: Path, job: Path | None = No
         "unresolved": [{"type": name, "used_by": sorted(set(where))[:6]}
                        for name, where in sorted(builder.unresolved.items())],
         "samples": samples,
+        "mechanic_catalogs": mechanic_catalogs,
+        "saved_profile": saved_profile,
+        "profile_file": str(profile_path),
     }
     for item in data["unresolved"]:
         emit(f"Chưa xác định kiểu {item['type']} (dùng ở {', '.join(item['used_by'])}); editor để ô JSON thô.")
@@ -1103,7 +1349,8 @@ def build_level_editor(leveldata: Path, output_html: Path, job: Path | None = No
     return {"output": str(output_html), "root": root_key, "classes": len(builder.classes),
             "enums": len(builder.enums), "apk_types_used": len(apk_types_used),
             "mechanic_enums": len(mechanic_keys), "levels_embedded": len(samples),
-            "unresolved": len(data["unresolved"]), "candidates": candidates}
+            "unresolved": len(data["unresolved"]), "candidates": candidates,
+            "leveldata": str(leveldata), "inferred_candidates": inferred}
 
 
 def write_editor_html(data: dict[str, Any], output_html: Path) -> None:

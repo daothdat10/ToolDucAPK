@@ -129,6 +129,28 @@ dialog{background:var(--panel);color:var(--text);border:1px solid var(--border);
 dialog::backdrop{background:rgba(0,0,0,.55)}
 dialog .dlg-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border)}
 dialog .dlg-body{padding:12px 14px;max-height:70vh;overflow:auto}
+.gboard{border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:12px;margin-bottom:14px}
+.board-svg{display:block;touch-action:none;user-select:none;cursor:crosshair}
+.board-svg .bc{fill:var(--cell-empty);stroke:var(--border);stroke-width:1}
+.board-svg .bc-target{fill:color-mix(in srgb,var(--accent) 30%,transparent);stroke:var(--accent)}
+.board-svg .ax{fill:var(--muted);font:10px var(--mono);text-anchor:middle}
+.board-svg .wall{fill:var(--border)}.board-svg .wall-x{stroke:var(--muted);stroke-width:2}
+.board-svg .ent{fill:var(--surface);stroke:var(--amber);stroke-width:2}
+.board-svg .ent-t{fill:var(--amber);font-family:var(--mono);font-weight:700;text-anchor:middle}
+.board-svg .sel-box{fill:none;stroke:var(--accent);stroke-width:3}
+.board-svg .link{stroke:var(--text);stroke-width:2;stroke-dasharray:5 4;opacity:.8}
+.board-svg .mech-dot{fill:var(--violet);stroke:#fff;stroke-width:1}
+.inspector{margin-top:12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg)}
+.inspector h4{margin:12px 0 6px}
+.mech-list{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.mech{border:1px solid var(--border);border-radius:7px;padding:6px 10px;background:var(--panel)}
+.setup{border:1px dashed var(--accent);border-radius:8px;padding:10px;margin:8px 0;background:var(--bg)}
+.setup-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 12px;margin:6px 0}
+.setup-row{display:flex;flex-direction:column;gap:2px}
+.setup-row select{width:100%}
+.setup-layer{border:1px solid var(--border);border-radius:7px;padding:6px 10px;margin:6px 0;background:var(--panel)}
+.board-svg .tile-t{fill:#0B1020;font:600 9px var(--mono);text-anchor:middle}
+.okbox{border:1px solid var(--green);color:var(--green);border-radius:6px;padding:6px 10px;margin:6px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 @media (max-width:1100px){main{grid-template-columns:200px minmax(0,1fr)}#rightPane{grid-column:1/-1;border-left:0;border-top:1px solid var(--border);max-height:45vh}}
 @media (max-width:700px){main{grid-template-columns:1fr}#levels{max-height:30vh;border-right:0;border-bottom:1px solid var(--border)}.field{grid-template-columns:1fr}#editorPane{padding:12px 16px 40px}}
 </style>
@@ -249,11 +271,12 @@ function makeObj(key, depth = 0) {
   /* flat width×height maps start with one entry per cell */
   const w = fields.find(f => f.type.k === "int" && W_NAMES.test(norm(f.json))), h = fields.find(f => f.type.k === "int" && H_NAMES.test(norm(f.json)));
   const cells = w && h ? (o[w.json] | 0) * (o[h.json] | 0) : 0;
-  if (cells > 0 && cells <= 10000) for (const f of fields) if (isFlatGrid(f.type, w, h) && Array.isArray(o[f.json]) && !o[f.json].length)
+  if (cells > 0 && cells <= 10000) for (const f of fields) if (isFlatGrid(f.type, f.json) && Array.isArray(o[f.json]) && !o[f.json].length)
     for (let i = 0; i < cells; i++) o[f.json].push(defaultFor(f.type.of, depth));
   return o;
 }
-const isFlatGrid = desc => desc.k === "list" && (isScalar(desc.of) || (desc.of.k === "obj" && cls(desc.of.ref).src !== "unity" && !coordFields(desc.of.ref) && typeField(desc.of.ref)));
+const GRID_LIST_NAMES = /cell|tile|grid|map|board|slot|block|layout|square/i;
+const isFlatGrid = (desc, name = "") => desc.k === "list" && GRID_LIST_NAMES.test(name) && (isScalar(desc.of) || (desc.of.k === "obj" && cls(desc.of.ref).src !== "unity" && !coordFields(desc.of.ref) && typeField(desc.of.ref)));
 
 /* coerce any JSON (APK data, imported files) into the LevelData shape */
 function coerce(desc, v, stats, depth = 0) {
@@ -365,7 +388,7 @@ function renderList() {
   S.levels.forEach((lv, i) => {
     const issues = validate(lv).filter(x => x.err).length;
     const li = el("li", { class: i === S.cur ? "active" : "", draggable: "true",
-      onclick: () => { S.cur = i; S.sel = null; renderAll(); },
+      onclick: () => { S.cur = i; S.sel = null; B.sel = null; B.play = null; B.solve = null; B.linkFrom = null; renderAll(); },
       ondragstart: e => { e.dataTransfer.setData("text/x-level", String(i)); e.dataTransfer.effectAllowed = "move"; },
       ondragover: e => { if ([...e.dataTransfer.types].includes("text/x-level")) { e.preventDefault(); li.classList.add("drag-over"); } },
       ondragleave: () => li.classList.remove("drag-over"),
@@ -466,9 +489,10 @@ function objEditor(desc, get, set, path, meta) {
   if (!v || typeof v !== "object") { v = makeObj(desc.ref); set(v); }
   if (c.src === "unity") return unityEditor(c, v);
   const body = el("div", { class: "obj-body" });
-  const boards = boardsFor(desc.ref, v, path);
+  const boards = boardsFor(desc.ref, v, path, meta.skip);
   boards.forEach(b => body.append(b));
   for (const f of c.fields) {
+    if (meta.skip && meta.skip.has(f.json)) continue;
     if (f.header) body.append(el("div", { class: "group-header", text: f.header }));
     body.append(fieldRow(f, v, path));
   }
@@ -564,18 +588,18 @@ function typeField(key, exclude = []) {
   const f = cls(key).fields.filter(x => !exclude.includes(x.json));
   return f.find(x => x.type.k === "enum") || f.find(x => (x.type.k === "int") && TYPE_NAMES.test(norm(x.json)) && !X_NAMES.includes(norm(x.json)) && !Y_NAMES.includes(norm(x.json)));
 }
-function boardsFor(key, obj, path) {
+function boardsFor(key, obj, path, skip) {
   const out = [], fields = cls(key).fields;
   const w = fields.find(f => f.type.k === "int" && W_NAMES.test(norm(f.json)));
   const h = fields.find(f => f.type.k === "int" && H_NAMES.test(norm(f.json)));
   for (const f of fields) {
-    if (f.type.k !== "list") continue;
+    if (f.type.k !== "list" || (skip && skip.has(f.json))) continue;
     const of = f.type.of;
     if (of.k === "obj" && cls(of.ref).src !== "unity") {
       const co = coordFields(of.ref);
       if (co) { out.push(placementBoard(f, of, obj, co, w, h, path)); continue; }
     }
-    if (w && h && isFlatGrid(f.type)) out.push(flatBoard(f, of, obj, w, h, path));
+    if (w && h && isFlatGrid(f.type, f.json)) out.push(flatBoard(f, of, obj, w, h, path));
   }
   return out;
 }
@@ -749,13 +773,14 @@ function validate(lv) {
         const c = cls(desc.ref);
         for (const f of c.fields) walk(f.type, v[f.json], path + "." + f.json, f);
         const w = c.fields.find(f => f.type.k === "int" && W_NAMES.test(norm(f.json))), h = c.fields.find(f => f.type.k === "int" && H_NAMES.test(norm(f.json)));
-        if (w && h) for (const f of c.fields) if (isFlatGrid(f.type) && Array.isArray(v[f.json]) && v[f.json].length !== (v[w.json] | 0) * (v[h.json] | 0))
+        if (w && h) for (const f of c.fields) if (isFlatGrid(f.type, f.json) && Array.isArray(v[f.json]) && v[f.json].length !== (v[w.json] | 0) * (v[h.json] | 0))
           out.push({ err: false, path: path + "." + f.json, msg: `có ${v[f.json].length} phần tử, ${w.json}×${h.json} = ${(v[w.json] | 0) * (v[h.json] | 0)}` });
         return;
       }
     }
   };
   walk(rootDesc, lv, "$");
+  out.push(...boardIssues(lv));
   return out;
 }
 
@@ -841,6 +866,787 @@ function showDialog(title, data, action, run) {
   $("#dlg").showModal();
 }
 
+/* ---------- board engine: drawn from a profile (auto-guessed from the schema, editable in ⚙) ----------
+   A profile maps LevelData fields to board roles, so any grid-based game can be laid out without code:
+   grid size, layers (each a list in LevelData), how each layer occupies cells, its colour/type/id fields,
+   mechanics, links between objects and optional built-in rules for play test and solver. */
+const PALETTE = ["#EF4444", "#3B82F6", "#22C55E", "#EAB308", "#A855F7", "#F97316", "#EC4899", "#14B8A6", "#94A3B8", "#84CC16", "#06B6D4", "#F43F5E"];
+const LAYER_MODES = { point: "Điểm (1 ô)", shape: "Khối nhiều ô", path: "Chuỗi ô (snake)", cells: "Danh sách ô", flat: "Lưới phẳng w×h", matrix: "Ma trận [y][x]" };
+const LAYER_DRAWS = { square: "Ô vuông", circle: "Hình tròn", ring: "Hố (vòng)", block: "Tường (gạch chéo)", snake: "Snake", tile: "Nền tô màu" };
+const RULES = { none: "Không (chỉ vẽ level)", snake_exit: "Snake ra hố cùng màu (Gecko/Snake Out)" };
+const PROFILE_KEY = "ducapk-level-editor-profile:" + D.meta.schema_id;
+const B = { tool: "add", layer: 0, colors: 8, pal: {}, sel: null, linkFrom: null, linkKind: null, flip: true, draft: null, paint: null, drag: null, play: null, solve: null, setup: false };
+const colorHex = c => PALETTE[((c % PALETTE.length) + PALETTE.length) % PALETTE.length];
+const ck = (x, y) => x + "," + y;
+
+/* schema paths ("a" or "a.b") */
+const getP = (o, p) => p ? p.split(".").reduce((a, k) => a == null ? undefined : a[k], o) : undefined;
+function setP(o, p, v) {
+  const ks = p.split("."); let a = o, d = { k: "obj", ref: ROOT };
+  for (const k of ks.slice(0, -1)) {
+    d = !d ? null : /^\d+$/.test(k) ? (d.k === "list" ? d.of : null) : (d.k === "obj" ? descAt(d.ref, k) : null);
+    if (Array.isArray(a) && /^\d+$/.test(k)) while (a.length <= +k) a.push(d && d.k === "obj" ? makeObj(d.ref) : {});
+    if (a[k] == null || typeof a[k] !== "object") a[k] = d && d.k === "obj" ? makeObj(d.ref) : d && d.k === "list" ? [] : {};
+    a = a[k];
+  }
+  a[ks[ks.length - 1]] = v;
+}
+function descAt(ref, p) {
+  if (!p) return null;
+  let d = { k: "obj", ref };
+  for (const k of p.split(".")) {
+    if (/^\d+$/.test(k)) { if (d.k !== "list") return null; d = d.of; continue; }
+    if (d.k !== "obj") return null; const f = cls(d.ref).fields.find(x => x.json === k); if (!f) return null; d = f.type;
+  }
+  return d;
+}
+function pathsOf(ref, test, depth = 2, prefix = "") {
+  const out = [];
+  for (const f of cls(ref).fields) {
+    const p = prefix + f.json;
+    if (test(f.type)) out.push(p);
+    if (depth > 1 && f.type.k === "obj" && cls(f.type.ref).src !== "unity" && !isCoordDesc(f.type)) out.push(...pathsOf(f.type.ref, test, depth - 1, p + "."));
+    /* first element of a list of objects, e.g. grids.0.width when the size lives on the level's grid */
+    if (depth > 1 && f.type.k === "list" && f.type.of.k === "obj" && cls(f.type.of.ref).src !== "unity" && !isCoordDesc(f.type.of)) out.push(...pathsOf(f.type.of.ref, test, depth - 1, p + ".0."));
+  }
+  return out;
+}
+const isNum = d => d && (d.k === "int" || d.k === "float");
+const isPureCoord = d => isCoordDesc(d) && cls(d.ref).fields.every(f => isNum(f.type)) && cls(d.ref).fields.length <= 3;
+/* grid coordinates: an object with integer x and y (Vector2Int, Coord, GridPosition…) */
+const isCoordDesc = d => !!d && d.k === "obj" && ["x", "y"].every(k => cls(d.ref).fields.some(f => f.json === k && f.type.k === "int"));
+const fieldNames = (ref, test) => ref ? cls(ref).fields.filter(f => test(f.type, f)).map(f => f.json) : [];
+const lastName = p => norm(String(p || "").split(".").pop());
+function mechanicSpec(ref) {
+  if (!ref) return null;
+  for (const f of cls(ref).fields) {
+    if (f.type.k !== "list" || f.type.of.k !== "obj") continue;
+    const inner = cls(f.type.of.ref).fields;
+    const kind = inner.find(x => x.type.k === "enum" && /kind|type/i.test(x.json));
+    const payload = inner.find(x => (x.type.k === "string" || x.type.k === "raw") && /payload|json|data|param/i.test(x.json));
+    if (kind && payload) return { field: f.json, kind: kind.json, payload: payload.json, enum: kind.type.ref, text: payload.type.k === "string" };
+  }
+  return null;
+}
+
+/* guess a profile from field names and types */
+function guessProfile() {
+  const ints = pathsOf(ROOT, d => d.k === "int");
+  const prof = { version: 1, grid: { width: ints.find(p => W_NAMES.test(lastName(p))) || "", height: ints.find(p => H_NAMES.test(lastName(p))) || "", flipY: true }, layers: [], links: null, rules: "none", levelMechanics: mechanicSpec(ROOT) };
+  for (const p of pathsOf(ROOT, d => d.k === "list").filter(p => !p.includes(".0."))) {
+    const of = descAt(ROOT, p).of, n = lastName(p);
+    let L = null;
+    if (isPureCoord(of)) L = { mode: "cells", draw: /hole|exit|goal/.test(n) ? "ring" : "block" };
+    else if (of.k === "obj" && cls(of.ref).src !== "unity") {
+      const ref = of.ref, F = cls(ref).fields;
+      const pick = (test, re, strict) => { const m = F.filter(f => test(f.type, f)); const hit = m.find(f => re && re.test(norm(f.json))); return (hit || (strict ? null : m[0]) || {}).json || ""; };
+      const pathF = pick(t => t.k === "list" && isCoordDesc(t.of), /body|segment|path|cells|positions|points|tiles/);
+      const posF = pick(t => isCoordDesc(t), /pos|position|cell|coord|point|origin|tile/);
+      const xF = F.find(f => isNum(f.type) && X_NAMES.includes(norm(f.json))), yF = F.find(f => isNum(f.type) && Y_NAMES.includes(norm(f.json)));
+      const shapeF = posF || (xF && yF) ? pick(t => t.k === "list" && isCoordDesc(t.of), /shape|offset|cells|blocks|parts/, true) : "";
+      const color = pick(t => t.k === "int" || t.k === "enum" || (t.k === "list" && (t.of.k === "int" || t.of.k === "enum")), /colou?r/, true);
+      const type = pick((t, f) => f.json !== color && (t.k === "enum" || (t.k === "int" && /type|kind|element|item|piece|tile|shape/.test(norm(f.json)))), /type|kind|element|item|piece/);
+      const extra = { color, type: type && type !== color ? type : "", id: pick(t => t.k === "int", /^(id|entityid|uid|snakeid)$/, true),
+        single: pick(t => t.k === "bool", /single|once/, true), mechanics: mechanicSpec(ref) };
+      if (pathF && !posF && !(xF && yF)) L = { mode: "path", path: pathF, draw: "snake", ...extra };
+      else if (posF || (xF && yF)) L = { mode: shapeF ? "shape" : "point", position: posF, x: posF ? "" : xF.json, y: posF ? "" : yF.json, shape: shapeF,
+        draw: /hole|exit|goal|target/.test(n) ? "ring" : /wall|block|obstacle|rock|stone/.test(n) ? "block" : "square", ...extra };
+      else if (prof.grid.width && GRID_LIST_NAMES.test(n) && typeField(ref) && !F.some(f => W_NAMES.test(norm(f.json)))) L = { mode: "flat", value: typeField(ref).json, draw: "tile" };
+    } else if (isScalar(of) && prof.grid.width && GRID_LIST_NAMES.test(n)) L = { mode: "flat", draw: "tile" };
+    else if (of.k === "list" && isScalar(of.of)) L = { mode: "matrix", draw: "tile" };
+    if (L) prof.layers.push({ name: p, list: p, solid: !["flat", "matrix"].includes(L.mode), ...L });
+  }
+  const order = { tile: 0, block: 1, ring: 2, square: 3, circle: 3, snake: 4 };
+  prof.layers.sort((a, b) => order[a.draw] - order[b.draw]);
+  const linkPath = pathsOf(ROOT, d => d.k === "list" && d.of.k === "obj").filter(p => !p.includes(".0.")).find(p => { const f = fieldNames(descAt(ROOT, p).of.ref, t => t.k === "int").map(norm); return f.some(x => /^source/.test(x)) && f.some(x => /^target/.test(x)); });
+  if (linkPath) {
+    const ref = descAt(ROOT, linkPath).of.ref, ints2 = fieldNames(ref, t => t.k === "int");
+    prof.links = { list: linkPath, source: ints2.find(x => /^source/i.test(x)), target: ints2.find(x => /^target/i.test(x)), kind: fieldNames(ref, t => t.k === "enum")[0] || "" };
+  }
+  if (prof.layers.some(l => l.mode === "path" && l.color) && prof.layers.some(l => l.draw === "ring" && l.color)) prof.rules = "snake_exit";
+  return prof;
+}
+function loadProfile() {
+  const local = store.get(PROFILE_KEY);
+  if (local) { try { const p = JSON.parse(local); if (p && Array.isArray(p.layers)) return p; } catch (e) {} }
+  if (D.saved_profile && Array.isArray(D.saved_profile.layers)) return clone(D.saved_profile);
+  return guessProfile();
+}
+let PR = loadProfile();
+B.flip = PR.grid.flipY !== false;
+function saveProfile() { store.set(PROFILE_KEY, JSON.stringify(PR)); }
+const hasBoard = () => !!(PR && PR.layers.length && PR.grid.width && PR.grid.height);
+function managedFields() {
+  const top = p => p && !p.includes(".") ? p : null;
+  return new Set([...PR.layers.map(l => top(l.list)), top(PR.links && PR.links.list), PR.levelMechanics && PR.levelMechanics.field].filter(Boolean));
+}
+
+/* layer accessors */
+const gw = lv => Math.max(1, getP(lv, PR.grid.width) | 0), gh = lv => Math.max(1, getP(lv, PR.grid.height) | 0);
+const LREF = L => { const d = descAt(ROOT, L.list); return d && d.k === "list" && d.of.k === "obj" ? d.of.ref : null; };
+function items(lv, L) { let a = getP(lv, L.list); if (!Array.isArray(a)) { a = []; setP(lv, L.list, a); } return a; }
+function itemCells(L, it) {
+  if (!it || typeof it !== "object") return [];
+  if (L.mode === "cells") return [{ x: it.x | 0, y: it.y | 0 }];
+  if (L.mode === "path") return (Array.isArray(it[L.path]) ? it[L.path] : []).map(c => ({ x: c.x | 0, y: c.y | 0 }));
+  const p = L.position ? (it[L.position] || {}) : { x: it[L.x], y: it[L.y] }, base = { x: p.x | 0, y: p.y | 0 };
+  if (L.mode === "shape" && L.shape && Array.isArray(it[L.shape]) && it[L.shape].length) return it[L.shape].map(o => ({ x: base.x + (o.x | 0), y: base.y + (o.y | 0) }));
+  return [base];
+}
+function setPos(L, it, x, y) {
+  if (L.mode === "cells") { it.x = x; it.y = y; return; }
+  if (L.position) { const d = descAt(LREF(L), L.position); it[L.position] = { ...(it[L.position] || (d && d.k === "obj" ? makeObj(d.ref) : {})), x, y }; }
+  else { it[L.x] = x; it[L.y] = y; }
+}
+const colorDesc = L => { const d = L.color && descAt(LREF(L), L.color); return d ? (d.k === "list" ? d.of : d) : null; };
+const typeDesc = L => L.type ? descAt(LREF(L), L.type) : null;
+function itemColor(L, it, j = 0) { if (!L.color || !it) return null; const v = it[L.color]; return Array.isArray(v) ? (v.length ? v[Math.min(j, v.length - 1)] : null) : v; }
+function fillFor(desc, v) {
+  if (v == null) return null;
+  if (desc && desc.k === "enum") return colorFor(enumLabel(desc, v), v) || "var(--surface)";
+  return typeof v === "number" ? colorHex(v) : colorFor(String(v), 1);
+}
+function itemLabel(L, it) {
+  const td = typeDesc(L);
+  if (td && L.type) return td.k === "enum" ? enumLabel(td, it[L.type]) : String(it[L.type]);
+  const spec = L.mechanics; const ms = spec && Array.isArray(it[spec.field]) ? it[spec.field] : [];
+  if (ms.length) { const e = mechEntry(spec, ms[0][spec.kind]); return e ? e.name : String(ms[0][spec.kind]); }
+  return L.name || "";
+}
+const catalogOf = spec => (spec && D.mechanic_catalogs && D.mechanic_catalogs[spec.enum]) || (spec ? enm(spec.enum).members.map(([value, name]) => ({ value, name, target: "snake hole entity level" })) : []);
+const mechEntry = (spec, v) => catalogOf(spec).find(m => m.value === v);
+const layerTarget = L => L.mode === "path" ? "snake" : L.draw === "ring" ? "hole" : "entity";
+function idsOf(lv) {
+  const ids = [];
+  PR.layers.forEach((L, li) => { if (L.id && LREF(L)) items(lv, L).forEach((it, i) => ids.push({ id: it[L.id], li, i })); });
+  return ids;
+}
+const nextId = lv => idsOf(lv).reduce((m, x) => Math.max(m, x.id | 0), 0) + 1;
+function occupancy(lv, solidOnly) {
+  const m = new Map();
+  PR.layers.forEach((L, li) => {
+    if (L.mode === "flat" || L.mode === "matrix" || (solidOnly && !L.solid)) return;
+    items(lv, L).forEach((it, i) => itemCells(L, it).forEach((c, j) => m.set(ck(c.x, c.y), { li, i, j })));
+  });
+  return m;
+}
+function hitAt(lv, c) {
+  const order = PR.layers.map((L, li) => li).reverse();
+  order.sort((a, b) => (b === B.layer) - (a === B.layer));
+  for (const li of order) {
+    const L = PR.layers[li]; if (L.mode === "flat" || L.mode === "matrix") continue;
+    const arr = items(lv, L);
+    for (let i = arr.length - 1; i >= 0; i--) { const j = itemCells(L, arr[i]).findIndex(p => p.x === c.x && p.y === c.y); if (j >= 0) return { li, i, j }; }
+  }
+  return null;
+}
+const objOf = (lv, ref) => ref ? items(lv, PR.layers[ref.li] || { list: "" })[ref.i] || null : null;
+function removeObj(lv, ref) {
+  const L = PR.layers[ref.li], it = objOf(lv, ref); if (!it) return;
+  if (L.id && PR.links) { const lk = PR.links; setP(lv, lk.list, (getP(lv, lk.list) || []).filter(l => l[lk.source] !== it[L.id] && l[lk.target] !== it[L.id])); }
+  items(lv, L).splice(ref.i, 1);
+}
+/* payload is a JSON string (spec.text) or an embedded object such as Newtonsoft JObject */
+const readPayload = (spec, m) => spec.text === false ? (m[spec.payload] && typeof m[spec.payload] === "object" ? m[spec.payload] : {}) : JSON.parse(m[spec.payload] || "{}");
+function writePayload(spec, m, obj) { m[spec.payload] = spec.text === false ? obj : JSON.stringify(obj); }
+function newMechanic(spec, value, ownerRef) {
+  const d = ownerRef && descAt(ownerRef, spec.field);
+  const m = d && d.k === "list" && d.of.k === "obj" ? makeObj(d.of.ref) : {};
+  m[spec.kind] = value;
+  const entry = mechEntry(spec, value);
+  writePayload(spec, m, entry && entry.payload ? serialize({ k: "obj", ref: entry.payload }, makeObj(entry.payload)) : {});
+  return m;
+}
+function gridValue(lv, L, x, y) {
+  const arr = getP(lv, L.list); if (!Array.isArray(arr)) return undefined;
+  const v = L.mode === "flat" ? arr[y * gw(lv) + x] : (Array.isArray(arr[y]) ? arr[y][x] : undefined);
+  return L.value && v && typeof v === "object" ? v[L.value] : v;
+}
+function setGridValue(lv, L, x, y, v) {
+  const d = descAt(ROOT, L.list); let arr = items(lv, L);
+  const inner = L.mode === "flat" ? d.of : d.of.of;
+  const put = (holder, k) => { if (L.value && inner.k === "obj") { if (!holder[k] || typeof holder[k] !== "object") holder[k] = makeObj(inner.ref); holder[k][L.value] = v; } else holder[k] = v; };
+  if (L.mode === "flat") { const n = gw(lv) * gh(lv); while (arr.length < n) arr.push(defaultFor(inner)); put(arr, y * gw(lv) + x); }
+  else { while (arr.length <= y) arr.push([]); while (arr[y].length <= x) arr[y].push(defaultFor(inner)); put(arr[y], x); }
+}
+const gridValueDesc = L => { const d = descAt(ROOT, L.list); if (!d) return null; const inner = L.mode === "flat" ? d.of : d.of && d.of.of; return L.value && inner && inner.k === "obj" ? descAt(inner.ref, L.value) : inner; };
+
+/* built-in rules: snake_exit — a snake moves by its head or tail one cell; it leaves when the moving end
+   enters a hole of its colour; single-entry holes close after one use; every other solid layer blocks. */
+function ruleLayers() {
+  const snake = PR.layers.findIndex(l => l.mode === "path"), hole = PR.layers.findIndex(l => l.draw === "ring" && l.mode !== "path");
+  return { snake, hole };
+}
+function simFrom(lv) {
+  const w = gw(lv), h = gh(lv), blocked = new Uint8Array(w * h), holeAt = new Int16Array(w * h).fill(-1);
+  const inside = c => c.x >= 0 && c.y >= 0 && c.x < w && c.y < h;
+  const { snake, hole } = ruleLayers(), SL = PR.layers[snake], HL = PR.layers[hole];
+  PR.layers.forEach((L, li) => { if (li === snake || li === hole || !L.solid || L.mode === "flat" || L.mode === "matrix") return; items(lv, L).forEach(it => itemCells(L, it).forEach(c => { if (inside(c)) blocked[c.y * w + c.x] = 1; })); });
+  const holes = HL ? items(lv, HL).map((it, i) => { const c = itemCells(HL, it)[0]; if (inside(c)) holeAt[c.y * w + c.x] = i; return { color: itemColor(HL, it) ?? 0, single: HL.single ? !!it[HL.single] : false }; }) : [];
+  const snakes = SL ? items(lv, SL) : [];
+  return { w, h, blocked, holeAt, holes, snakes: snakes.map(it => ({ colors: itemCells(SL, it).map((_, j) => itemColor(SL, it, j) ?? 0) })),
+    start: { cells: snakes.map(it => itemCells(SL, it).filter(inside).map(c => c.y * w + c.x)), holes: holes.map(() => 1) } };
+}
+const stateKey = st => st.cells.map(c => c ? c.join(".") : "x").join("|") + "#" + st.holes.join("");
+function tryMove(sim, st, si, end, target) {
+  const cells = st.cells[si]; if (!cells || !cells.length) return null;
+  const { w, h } = sim, from = end ? cells[cells.length - 1] : cells[0];
+  const fx = from % w, fy = (from / w) | 0, tx = target % w, ty = (target / w) | 0;
+  if (tx < 0 || ty < 0 || tx >= w || ty >= h || Math.abs(fx - tx) + Math.abs(fy - ty) !== 1) return null;
+  const hole = sim.holeAt[target];
+  if (hole >= 0 && st.holes[hole]) {
+    const color = sim.snakes[si].colors[end ? cells.length - 1 : 0] ?? 0;
+    if (sim.holes[hole].color !== color) return null;
+    const next = { cells: st.cells.slice(), holes: st.holes.slice() };
+    next.cells[si] = null;
+    if (sim.holes[hole].single) next.holes[hole] = 0;
+    return next;
+  }
+  if (sim.blocked[target]) return null;
+  const tail = end ? cells[0] : cells[cells.length - 1];
+  for (let k = 0; k < st.cells.length; k++) {
+    const c = st.cells[k]; if (!c) continue;
+    if (c.includes(target) && !(k === si && target === tail && cells.length >= 4)) return null;
+  }
+  const next = { cells: st.cells.slice(), holes: st.holes };
+  next.cells[si] = end ? [...cells.slice(1), target] : [target, ...cells.slice(0, -1)];
+  return next;
+}
+function movesFrom(sim, st) {
+  const out = [], { w } = sim;
+  st.cells.forEach((cells, si) => {
+    if (!cells || !cells.length) return;
+    for (const end of cells.length > 1 ? [0, 1] : [0]) {
+      const from = end ? cells[cells.length - 1] : cells[0], x = from % w;
+      for (const t of [from - w, from + w, x > 0 ? from - 1 : -1, x < w - 1 ? from + 1 : -1]) {
+        if (t < 0 || t >= sim.w * sim.h) continue;
+        const next = tryMove(sim, st, si, end, t);
+        if (next) out.push({ si, end, t, next });
+      }
+    }
+  });
+  return out;
+}
+function solve(lv, limit = 250000) {
+  const sim = simFrom(lv);
+  if (!sim.start.cells.length) return { ok: false, msg: "Chưa có snake nào." };
+  const seen = new Set([stateKey(sim.start)]), states = [sim.start], parent = [-1], via = [null];
+  for (let q = 0; q < states.length; q++) {
+    const st = states[q];
+    if (st.cells.every(c => !c)) {
+      const path = []; for (let i = q; parent[i] !== -1; i = parent[i]) path.push(via[i]);
+      return { ok: true, moves: path.reverse(), explored: states.length };
+    }
+    for (const m of movesFrom(sim, st)) {
+      const k = stateKey(m.next); if (seen.has(k)) continue;
+      seen.add(k); states.push(m.next); parent.push(q); via.push({ si: m.si, end: m.end, t: m.t });
+      if (states.length > limit) return { ok: false, limit: true, explored: states.length, msg: `Dừng sau ${limit.toLocaleString()} trạng thái — level quá lớn để giải hết, chưa kết luận.` };
+    }
+  }
+  return { ok: false, explored: states.length, msg: `Không giải được: đã thử mọi ${states.length.toLocaleString()} trạng thái, luôn còn snake kẹt.` };
+}
+function ignoredMechanics(lv) {
+  const names = new Set(), add = (spec, list) => (list || []).forEach(m => { const e = mechEntry(spec, m[spec.kind]); names.add(e ? e.name : String(m[spec.kind])); });
+  PR.layers.forEach(L => { if (L.mechanics && LREF(L)) items(lv, L).forEach(it => add(L.mechanics, it[L.mechanics.field])); });
+  if (PR.levelMechanics) add(PR.levelMechanics, getP(lv, PR.levelMechanics.field));
+  if (PR.links && (getP(lv, PR.links.list) || []).length) names.add("liên kết (links)");
+  return [...names];
+}
+
+/* validation from the profile and the rules */
+function boardIssues(lv) {
+  if (!hasBoard()) return [];
+  const out = [], w = gw(lv), h = gh(lv), solid = new Map();
+  PR.layers.forEach((L, li) => {
+    if (L.mode === "flat" || L.mode === "matrix" || !LREF(L) && L.mode !== "cells") return;
+    const own = new Map();
+    items(lv, L).forEach((it, i) => {
+      const cells = itemCells(L, it), path = `$.${L.list}[${i}]`, label = `${L.name} #${i}`;
+      cells.forEach(c => {
+        if (c.x < 0 || c.y < 0 || c.x >= w || c.y >= h) { out.push({ err: true, path, msg: `${label} ngoài lưới ${w}×${h} tại (${c.x},${c.y})` }); return; }
+        const k = ck(c.x, c.y);
+        if (own.has(k) && own.get(k) !== i) out.push({ err: true, path, msg: `${label} chồng lên ${L.name} #${own.get(k)} tại (${c.x},${c.y})` });
+        own.set(k, i);
+        if (L.solid) { if (solid.has(k) && solid.get(k).li !== li) out.push({ err: true, path, msg: `${label} chồng lên ${solid.get(k).label} tại (${c.x},${c.y})` }); else solid.set(k, { li, label }); }
+      });
+      if (L.mode === "path") {
+        if (!cells.length) out.push({ err: true, path, msg: `${label} chưa có ô nào` });
+        for (let j = 1; j < cells.length; j++) if (Math.abs(cells[j].x - cells[j - 1].x) + Math.abs(cells[j].y - cells[j - 1].y) !== 1)
+          out.push({ err: true, path, msg: `${label}: ô ${j - 1}→${j} không liền kề (chỉ đi ngang/dọc từng ô)` });
+        const cv = L.color && it[L.color];
+        if (Array.isArray(cv) && cv.length !== cells.length && cv.length > 1) out.push({ err: false, path, msg: `${label}: ${cv.length} màu cho ${cells.length} ô` });
+      }
+      if (L.mechanics) (it[L.mechanics.field] || []).forEach((m, j) => {
+        try { readPayload(L.mechanics, m); } catch (e) { out.push({ err: true, path: `${path}.${L.mechanics.field}[${j}]`, msg: `payload JSON lỗi: ${e.message}` }); }
+        const en = mechEntry(L.mechanics, m[L.mechanics.kind]);
+        if (en && en.target && !en.target.split(" ").includes(layerTarget(L))) out.push({ err: false, path, msg: `${en.name} thường gắn cho ${en.target}, không phải ${L.name}` });
+      });
+    });
+  });
+  const ids = idsOf(lv), count = new Map();
+  ids.forEach(x => count.set(x.id, (count.get(x.id) || 0) + 1));
+  for (const [id, n] of count) if (n > 1) out.push({ err: true, path: "$", msg: `id ${id} bị dùng ${n} lần` });
+  if (PR.links) (getP(lv, PR.links.list) || []).forEach((l, i) => [PR.links.source, PR.links.target].forEach(k => {
+    if (k && !count.has(l[k])) out.push({ err: true, path: `$.${PR.links.list}[${i}]`, msg: `link #${i}: ${k}=${l[k]} không trỏ tới object nào` });
+  }));
+  if (PR.rules === "snake_exit") {
+    const { snake, hole } = ruleLayers();
+    if (snake >= 0 && hole >= 0) {
+      const SL = PR.layers[snake], HL = PR.layers[hole], colors = new Set(items(lv, HL).map(it => itemColor(HL, it) ?? 0));
+      items(lv, SL).forEach((it, i) => { const n = itemCells(SL, it).length; if (n && !colors.has(itemColor(SL, it, 0) ?? 0) && !colors.has(itemColor(SL, it, n - 1) ?? 0)) out.push({ err: true, path: `$.${SL.list}[${i}]`, msg: `${SL.name} #${i} màu ${itemColor(SL, it, 0)} không có hố cùng màu — không thể ra khỏi bàn` }); });
+    }
+  }
+  return out;
+}
+
+/* drawing */
+function boardSvg(lv, opts = {}) {
+  const w = gw(lv), h = gh(lv), cs = Math.max(20, Math.min(56, Math.floor(640 / Math.max(w, h)))), pad = 18;
+  const px = x => pad + x * cs + cs / 2, py = y => pad + (B.flip ? h - 1 - y : y) * cs + cs / 2;
+  const NS = "http://www.w3.org/2000/svg";
+  const s = (tag, attrs, parent) => { const n = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); if (parent) parent.append(n); return n; };
+  const svg = s("svg", { width: w * cs + pad * 2, height: h * cs + pad * 2, class: "board-svg" });
+  for (let x = 0; x < w; x++) s("text", { x: px(x), y: 12, class: "ax" }, svg).textContent = x;
+  for (let y = 0; y < h; y++) s("text", { x: 8, y: py(y) + 3, class: "ax" }, svg).textContent = y;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) s("rect", { x: px(x) - cs / 2 + 1, y: py(y) - cs / 2 + 1, width: cs - 2, height: cs - 2, rx: 4, class: "bc" }, svg);
+  const box = (c, cls2) => s("rect", { x: px(c.x) - cs / 2 + 1, y: py(c.y) - cs / 2 + 1, width: cs - 2, height: cs - 2, rx: 5, class: cls2 }, svg);
+  for (const t of opts.targets || []) box({ x: t % w, y: (t / w) | 0 }, "bc-target");
+  const play = opts.play;
+  PR.layers.forEach((L, li) => {
+    if (L.mode === "flat" || L.mode === "matrix") {
+      const vd = gridValueDesc(L);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const v = gridValue(lv, L, x, y); if (v == null || v === 0 || v === false) continue;
+        const fill = fillFor(vd, v); if (!fill) continue;
+        s("rect", { x: px(x) - cs / 2 + 2, y: py(y) - cs / 2 + 2, width: cs - 4, height: cs - 4, rx: 4, fill, opacity: .85 }, svg);
+        if (cs >= 26) s("text", { x: px(x), y: py(y) + 3, class: "tile-t" }, svg).textContent = (vd && vd.k === "enum" ? enumLabel(vd, v) : String(v)).slice(0, 3);
+      }
+      return;
+    }
+    const arr = items(lv, L);
+    arr.forEach((it, i) => {
+      if (play && li === play.holeLayer && !play.st.holes[i]) return;
+      const cells = play && li === play.snakeLayer ? play.cellsOf(i) : itemCells(L, it);
+      if (!cells || !cells.length) return;
+      const sel = !play && B.sel && B.sel.li === li && B.sel.i === i;
+      const col = itemColor(L, it), cd = colorDesc(L);
+      const fill = L.color ? fillFor(cd, col) : fillFor(typeDesc(L), L.type ? it[L.type] : null) || "var(--surface)";
+      if (L.draw === "snake" || L.mode === "path") {
+        const pts = cells.map(c => `${px(c.x)},${py(c.y)}`).join(" ");
+        if (sel) s("polyline", { points: pts, fill: "none", stroke: "var(--accent)", "stroke-width": cs * 0.78, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: .55 }, svg);
+        s("polyline", { points: pts, fill: "none", stroke: fillFor(cd, itemColor(L, it, 0)) || fill, "stroke-width": cs * 0.56, "stroke-linecap": "round", "stroke-linejoin": "round" }, svg);
+        cells.forEach((c, j) => { const cj = itemColor(L, it, j); if (cj !== itemColor(L, it, 0)) s("circle", { cx: px(c.x), cy: py(c.y), r: cs * 0.22, fill: fillFor(cd, cj) }, svg); });
+        const hd = cells[0], nx = cells[1] || { x: hd.x, y: hd.y - 1 };
+        const dx = Math.sign(hd.x - nx.x), dy = -Math.sign(hd.y - nx.y) * (B.flip ? 1 : -1);
+        s("circle", { cx: px(hd.x), cy: py(hd.y), r: cs * 0.34, fill: fillFor(cd, itemColor(L, it, 0)) || fill, stroke: "#fff", "stroke-width": 2 }, svg);
+        for (const side of [-1, 1]) s("circle", { cx: px(hd.x) + dx * cs * 0.12 + (dy ? side : 0) * cs * 0.13, cy: py(hd.y) + dy * cs * 0.12 + (dx ? side : 0) * cs * 0.13, r: cs * 0.065, fill: "#0B1020" }, svg);
+        const tl = cells[cells.length - 1];
+        if (cells.length > 1) s("circle", { cx: px(tl.x), cy: py(tl.y), r: cs * 0.12, fill: "#fff", opacity: .75 }, svg);
+        if (play && opts.pick && opts.pick.si === i) { const c = opts.pick.end ? tl : hd; s("circle", { cx: px(c.x), cy: py(c.y), r: cs * 0.44, fill: "none", stroke: "var(--accent)", "stroke-width": 3 }, svg); }
+      } else {
+        for (const c of cells) {
+          if (L.draw === "ring") s("circle", { cx: px(c.x), cy: py(c.y), r: cs * 0.36, fill: "#05070f", stroke: fill, "stroke-width": cs * 0.13, "stroke-dasharray": L.single && it[L.single] ? `${cs * 0.18} ${cs * 0.1}` : "none" }, svg);
+          else if (L.draw === "block") { s("rect", { x: px(c.x) - cs / 2 + 2, y: py(c.y) - cs / 2 + 2, width: cs - 4, height: cs - 4, rx: 3, class: "wall", ...(L.color || L.type ? { fill } : {}) }, svg); s("path", { d: `M${px(c.x) - cs / 4},${py(c.y) - cs / 4}L${px(c.x) + cs / 4},${py(c.y) + cs / 4}M${px(c.x) + cs / 4},${py(c.y) - cs / 4}L${px(c.x) - cs / 4},${py(c.y) + cs / 4}`, class: "wall-x" }, svg); }
+          else if (L.draw === "circle") s("circle", { cx: px(c.x), cy: py(c.y), r: cs * 0.38, fill }, svg);
+          else s("rect", { x: px(c.x) - cs * 0.42, y: py(c.y) - cs * 0.42, width: cs * 0.84, height: cs * 0.84, rx: cs * 0.14, fill, stroke: "rgba(255,255,255,.35)" }, svg);
+          if (sel) box(c, "sel-box");
+        }
+        if (L.draw === "square" || L.draw === "circle") { const lbl = itemLabel(L, it); if (lbl && cs >= 24) s("text", { x: px(cells[0].x), y: py(cells[0].y) + cs * 0.1, class: "ent-t", "font-size": Math.max(8, cs * 0.24) }, svg).textContent = (lbl.replace(/[a-z]/g, "") || lbl).slice(0, 3); }
+      }
+      if (L.mechanics && Array.isArray(it[L.mechanics.field]) && it[L.mechanics.field].length) s("circle", { cx: px(cells[0].x) + cs * 0.3, cy: py(cells[0].y) - cs * 0.3, r: cs * 0.1, class: "mech-dot" }, svg);
+    });
+  });
+  if (opts.draft) { const pts = opts.draft.map(c => `${px(c.x)},${py(c.y)}`).join(" "); s("polyline", { points: pts, fill: "none", stroke: "var(--accent)", "stroke-width": cs * 0.5, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: .6 }, svg); }
+  if (PR.links && !play) {
+    const centers = new Map();
+    PR.layers.forEach((L, li) => { if (L.id && LREF(L)) items(lv, L).forEach(it => { const c = itemCells(L, it)[0]; if (c) centers.set(it[L.id], c); }); });
+    for (const l of getP(lv, PR.links.list) || []) { const a = centers.get(l[PR.links.source]), b = centers.get(l[PR.links.target]); if (a && b) s("line", { x1: px(a.x), y1: py(a.y), x2: px(b.x), y2: py(b.y), class: "link" }, svg); }
+  }
+  svg.cellAt = e => {
+    const r = svg.getBoundingClientRect(), x = Math.floor((e.clientX - r.left - pad) / cs), row = Math.floor((e.clientY - r.top - pad) / cs), y = B.flip ? h - 1 - row : row;
+    return x >= 0 && y >= 0 && x < w && y < h ? { x, y } : null;
+  };
+  return svg;
+}
+
+/* editing */
+function boardEditor(lv) {
+  const wrap = el("div", { class: "gboard" });
+  const head = el("div", { class: "board-head" }, el("strong", { text: "Bàn chơi" }),
+    el("button", { class: "small" + (B.setup ? " primary" : ""), text: "⚙ Thiết lập bàn chơi", onclick: () => { B.setup = !B.setup; renderAll(); } }));
+  wrap.append(head);
+  if (B.setup || !hasBoard()) wrap.append(profilePanel(lv));
+  if (!hasBoard()) { wrap.append(el("div", { class: "hint", text: "Chọn field width/height và ít nhất một lớp để hiện bàn chơi." })); return wrap; }
+  if (!(getP(lv, PR.grid.width) > 0) || !(getP(lv, PR.grid.height) > 0)) {
+    wrap.append(el("div", { class: "warnbox" }, `Level chưa có kích thước lưới (${PR.grid.width} × ${PR.grid.height}). `,
+      el("button", { class: "small primary", text: "Tạo lưới 8×8", onclick: () => { if (!(getP(lv, PR.grid.width) > 0)) setP(lv, PR.grid.width, 8); if (!(getP(lv, PR.grid.height) > 0)) setP(lv, PR.grid.height, 8); changed(true); } })));
+    return wrap;
+  }
+  B.layer = Math.min(B.layer, PR.layers.length - 1);
+  const L = PR.layers[B.layer];
+  head.append(el("span", { class: "hint", text: `${gw(lv)}×${gh(lv)} · ` + PR.layers.map(l => `${items(lv, l).length} ${l.name}`).join(" · ") + (PR.rules !== "none" ? ` · luật: ${RULES[PR.rules]}` : "") }));
+  const layerBar = el("div", { class: "toolbar-row" }, el("span", { class: "hint", text: "Lớp:" }));
+  PR.layers.forEach((l, li) => layerBar.append(el("button", { class: "small" + (li === B.layer ? " primary" : ""), title: LAYER_MODES[l.mode], text: l.name, onclick: () => { B.layer = li; B.sel = null; B.tool = "add"; renderAll(); } })));
+  wrap.append(layerBar);
+  const addLabel = { point: "＋ Đặt", shape: "＋ Đặt khối", path: "〰 Vẽ chuỗi", cells: "▦ Bật/tắt ô", flat: "🖌 Tô", matrix: "🖌 Tô" }[L.mode];
+  const tools = [["add", addLabel], ["select", "➤ Chọn / kéo"], ["erase", "✕ Xóa"]];
+  if (PR.links) tools.push(["link", "⟷ Liên kết"]);
+  const bar = el("div", { class: "toolbar-row" });
+  for (const [id, label] of tools) bar.append(el("button", { class: "small" + (B.tool === id && !B.play ? " primary" : ""), text: label, onclick: () => { B.tool = id; B.linkFrom = null; B.play = null; renderAll(); } }));
+  bar.append(el("span", { style: { marginLeft: "auto" } }),
+    el("label", { class: "hint" }, el("input", { type: "checkbox", checked: B.flip, onchange: e => { B.flip = e.target.checked; PR.grid.flipY = B.flip; saveProfile(); renderAll(); } }), " y=0 ở dưới"));
+  if (PR.rules === "snake_exit") bar.append(
+    el("button", { class: "small" + (B.play ? " primary" : ""), text: B.play ? "■ Dừng chơi" : "▶ Chơi thử", onclick: () => { B.play = B.play ? null : startPlay(lv); renderAll(); } }),
+    el("button", { class: "small", text: "⚙ Kiểm tra giải được", onclick: () => { B.solve = { running: true }; renderAll(); setTimeout(() => { B.solve = solve(lv); renderAll(); }, 30); } }));
+  wrap.append(bar, paletteRow(lv, L));
+  if (B.solve) wrap.append(solveBox(lv));
+  const host = el("div", { class: "grid-wrap" });
+  wrap.append(host);
+  if (B.play) { renderPlay(host, lv); wrap.append(el("div", { class: "hint", text: B.play.msg })); return wrap; }
+  const draw = () => {
+    host.textContent = "";
+    const svg = boardSvg(lv, { draft: B.draft });
+    host.append(svg);
+    svg.addEventListener("contextmenu", e => { e.preventDefault(); const c = svg.cellAt(e); if (!c) return; eraseAt(lv, c); });
+    svg.addEventListener("pointerdown", e => { if (e.button !== 0) return; const c = svg.cellAt(e); if (!c) return; svg.setPointerCapture(e.pointerId); onDown(lv, c, draw); });
+    svg.addEventListener("pointermove", e => { if (!B.draft && !B.paint && !B.drag) return; const c = svg.cellAt(e); if (c) onDrag(lv, c, draw); });
+    svg.addEventListener("pointerup", () => onUp(lv));
+  };
+  draw();
+  wrap.append(inspector(lv));
+  return wrap;
+}
+function paletteRow(lv, L) {
+  const row = el("div", { class: "palette" }), st = B.pal[B.layer] || (B.pal[B.layer] = {});
+  const swatches = (desc, key, label) => {
+    if (!desc) return;
+    const values = desc.k === "enum" ? enm(desc.ref).members.map(([v, n]) => [v, n]) : desc.k === "bool" ? [[false, "false"], [true, "true"]] : Array.from({ length: B.colors }, (_, i) => [i, String(i)]);
+    if (st[key] === undefined) st[key] = values[Math.min(1, values.length - 1)]?.[0] ?? 0;
+    row.append(el("span", { class: "hint", text: label }));
+    for (const [v, n] of values) row.append(el("span", { class: "swatch" + (st[key] === v ? " on" : ""), title: String(v), onclick: () => { st[key] = v; renderAll(); } }, el("i", { style: { background: fillFor(desc, v) || "var(--cell-empty)" } }), n));
+    if (desc.k === "int") row.append(el("button", { class: "small ghost", text: "＋", title: "Thêm giá trị", onclick: () => { B.colors++; renderAll(); } }));
+  };
+  if (L.mode === "flat" || L.mode === "matrix") swatches(gridValueDesc(L), "value", "Giá trị:");
+  else { swatches(colorDesc(L), "color", "Màu:"); swatches(typeDesc(L), "type", "Loại:"); }
+  if (L.mechanics && L.mode !== "path") {
+    const cat = catalogOf(L.mechanics).filter(m => !m.target || m.target.split(" ").includes(layerTarget(L)));
+    if (cat.length) row.append(el("label", { class: "hint" }, " Cơ chế khi đặt: ", el("select", { onchange: e => { st.mech = e.target.value === "" ? null : +e.target.value; } },
+      el("option", { value: "", text: "(không)" }), cat.map(m => { const o = el("option", { value: m.value, text: m.name }); if (m.value === st.mech) o.selected = true; return o; }))));
+  }
+  if (B.tool === "link" && PR.links) {
+    const kd = PR.links.kind && descAt(descAt(ROOT, PR.links.list).of.ref, PR.links.kind);
+    if (kd && kd.k === "enum") { if (B.linkKind == null) B.linkKind = enm(kd.ref).members[0]?.[0]; row.append(el("label", { class: "hint" }, " Loại link: ", el("select", { onchange: e => { B.linkKind = +e.target.value; } }, enm(kd.ref).members.map(([v, n]) => { const o = el("option", { value: v, text: n }); if (v === B.linkKind) o.selected = true; return o; })))); }
+    row.append(el("span", { class: "hint", text: B.linkFrom ? " · đã chọn nguồn, bấm đích" : " · bấm object nguồn" }));
+  }
+  return row;
+}
+function newItem(lv, L, cells) {
+  const ref = LREF(L), st = B.pal[B.layer] || {};
+  const it = L.mode === "cells" ? (ref ? makeObj(ref) : {}) : makeObj(ref);
+  if (L.mode === "path") { const d = descAt(ref, L.path); it[L.path] = cells.map(c => ({ ...(d && d.of.k === "obj" ? makeObj(d.of.ref) : {}), x: c.x, y: c.y })); }
+  else setPos(L, it, cells[0].x, cells[0].y);
+  if (L.color && st.color !== undefined) { const d = descAt(ref, L.color); it[L.color] = d.k === "list" ? cells.map(() => st.color) : st.color; }
+  if (L.type && st.type !== undefined) it[L.type] = st.type;
+  if (L.id) it[L.id] = nextId(lv);
+  if (L.mechanics && st.mech != null) { if (!Array.isArray(it[L.mechanics.field])) it[L.mechanics.field] = []; it[L.mechanics.field].push(newMechanic(L.mechanics, st.mech, ref)); }
+  items(lv, L).push(it);
+  return { li: B.layer, i: items(lv, L).length - 1 };
+}
+function eraseAt(lv, c) {
+  const L = PR.layers[B.layer];
+  if (L.mode === "flat" || L.mode === "matrix") { setGridValue(lv, L, c.x, c.y, defaultFor(gridValueDesc(L))); changed(true); return; }
+  const hit = hitAt(lv, c); if (hit) { removeObj(lv, hit); B.sel = null; changed(true); }
+}
+function onDown(lv, c, draw) {
+  const L = PR.layers[B.layer], hit = hitAt(lv, c), solid = occupancy(lv, true);
+  if (B.tool === "erase") { eraseAt(lv, c); return; }
+  if (B.tool === "link") {
+    if (!hit || !PR.layers[hit.li].id) return;
+    if (!B.linkFrom) { B.linkFrom = hit; renderAll(); return; }
+    const a = objOf(lv, B.linkFrom)[PR.layers[B.linkFrom.li].id], b = objOf(lv, hit)[PR.layers[hit.li].id], lk = PR.links;
+    if (a !== b) { const ref = descAt(ROOT, lk.list).of.ref, l = makeObj(ref); l[lk.source] = a; l[lk.target] = b; if (lk.kind && B.linkKind != null) l[lk.kind] = B.linkKind; let arr = getP(lv, lk.list); if (!Array.isArray(arr)) { arr = []; setP(lv, lk.list, arr); } arr.push(l); }
+    B.linkFrom = null; changed(true); return;
+  }
+  if (B.tool === "select") {
+    B.sel = hit ? { li: hit.li, i: hit.i } : null;
+    const HL = hit && PR.layers[hit.li];
+    if (hit && (HL.mode === "point" || HL.mode === "shape" || HL.mode === "cells")) B.drag = { ref: B.sel, from: c, moved: false };
+    renderAll(); return;
+  }
+  switch (L.mode) {
+    case "flat": case "matrix": B.paint = true; setGridValue(lv, L, c.x, c.y, clone((B.pal[B.layer] || {}).value)); draw(); return;
+    case "cells": {
+      const arr = items(lv, L), i = arr.findIndex(p => p.x === c.x && p.y === c.y);
+      B.paint = i >= 0 ? "remove" : "add"; paintCell(lv, L, c); draw(); return;
+    }
+    case "path": {
+      if (hit && hit.li === B.layer) {
+        const n = itemCells(L, objOf(lv, hit)).length;
+        if (hit.j === 0 || hit.j === n - 1) { B.draft = [{ ...c }]; B.extend = { i: hit.i, head: hit.j === 0 }; draw(); return; }
+      }
+      if (hit) { B.sel = { li: hit.li, i: hit.i }; renderAll(); return; }
+      B.draft = [{ ...c }]; B.extend = null; draw(); return;
+    }
+    default: {
+      if (hit && (hit.li === B.layer || solid.has(ck(c.x, c.y)) && L.solid)) {
+        if (hit.li === B.layer && L.color && (B.pal[B.layer] || {}).color !== undefined && L.mode === "point") {
+          const it = objOf(lv, hit), d = descAt(LREF(L), L.color); it[L.color] = d.k === "list" ? (it[L.color] || [0]).map(() => B.pal[B.layer].color) : B.pal[B.layer].color;
+          B.sel = { li: hit.li, i: hit.i }; changed(true); return;
+        }
+        B.sel = { li: hit.li, i: hit.i }; renderAll(); return;
+      }
+      B.sel = newItem(lv, L, [c]); changed(true);
+    }
+  }
+}
+function onDrag(lv, c, draw) {
+  const L = PR.layers[B.layer];
+  if (B.drag) {
+    const DL = PR.layers[B.drag.ref.li], it = objOf(lv, B.drag.ref); if (!it) return;
+    const base = itemCells(DL, it)[0], dx = c.x - B.drag.from.x, dy = c.y - B.drag.from.y;
+    if (!dx && !dy) return;
+    if (DL.mode === "shape" && DL.shape && Array.isArray(it[DL.shape]) && it[DL.shape].length) {
+      const p = DL.position ? it[DL.position] : { x: it[DL.x], y: it[DL.y] }; setPos(DL, it, (p.x | 0) + dx, (p.y | 0) + dy);
+    } else setPos(DL, it, base.x + dx, base.y + dy);
+    B.drag.from = c; B.drag.moved = true; draw(); return;
+  }
+  if (B.paint && (L.mode === "flat" || L.mode === "matrix")) { setGridValue(lv, L, c.x, c.y, clone((B.pal[B.layer] || {}).value)); draw(); return; }
+  if (B.paint) { paintCell(lv, L, c); draw(); return; }
+  const d = B.draft, last = d[d.length - 1];
+  if (last.x === c.x && last.y === c.y) return;
+  if (d.length > 1 && d[d.length - 2].x === c.x && d[d.length - 2].y === c.y) { d.pop(); draw(); return; }
+  if (Math.abs(last.x - c.x) + Math.abs(last.y - c.y) !== 1 || d.some(p => p.x === c.x && p.y === c.y)) return;
+  if (occupancy(lv, true).has(ck(c.x, c.y))) return;
+  d.push({ ...c }); draw();
+}
+function onUp(lv) {
+  if (B.drag) { const moved = B.drag.moved; B.drag = null; if (moved) changed(true); return; }
+  if (B.paint) { B.paint = null; changed(true); return; }
+  if (!B.draft) return;
+  const L = PR.layers[B.layer], d = B.draft; B.draft = null;
+  if (B.extend) {
+    const it = items(lv, L)[B.extend.i], body = it[L.path], extra = d.slice(1), cd = L.color && descAt(LREF(L), L.color);
+    const pd = descAt(LREF(L), L.path), mk = c => ({ ...(pd && pd.of.k === "obj" ? makeObj(pd.of.ref) : {}), x: c.x, y: c.y });
+    if (extra.length) {
+      const cols = cd && cd.k === "list" ? it[L.color] : null;
+      if (B.extend.head) { body.unshift(...extra.reverse().map(mk)); if (cols) cols.unshift(...extra.map(() => itemColor(L, it, 0))); }
+      else { const lastColor = itemColor(L, it, body.length - 1); body.push(...extra.map(mk)); if (cols) cols.push(...extra.map(() => lastColor)); }
+    }
+    B.sel = { li: B.layer, i: B.extend.i }; B.extend = null; changed(true); return;
+  }
+  B.sel = newItem(lv, L, d); changed(true);
+}
+function paintCell(lv, L, c) {
+  const arr = items(lv, L), i = arr.findIndex(p => p.x === c.x && p.y === c.y);
+  if (B.paint === "remove" && i >= 0) arr.splice(i, 1);
+  else if (B.paint === "add" && i < 0 && !(L.solid && occupancy(lv, true).has(ck(c.x, c.y)))) { const ref = LREF(L); arr.push({ ...(ref ? makeObj(ref) : {}), x: c.x, y: c.y }); }
+}
+
+/* inspector */
+const payloadCache = new WeakMap();
+function mechanicsEditor(owner, spec, target, ownerRef) {
+  if (!spec) return null;
+  if (!Array.isArray(owner[spec.field])) owner[spec.field] = [];
+  const list2 = owner[spec.field], cat = catalogOf(spec), fit2 = cat.filter(m => !m.target || m.target.split(" ").includes(target));
+  const box = el("div", { class: "mech-list" });
+  const add = el("select", {}, el("option", { value: "", text: "＋ Thêm cơ chế…" }),
+    el("optgroup", { label: "Phù hợp" }, fit2.map(m => el("option", { value: m.value, text: `${m.name}${m.payload ? "" : " (không tham số)"}` }))),
+    el("optgroup", { label: "Tất cả" }, cat.filter(m => !fit2.includes(m)).map(m => el("option", { value: m.value, text: m.name }))));
+  add.onchange = () => { if (add.value === "") return; list2.push(newMechanic(spec, +add.value, ownerRef)); changed(true); };
+  box.append(el("div", { class: "list-head" }, el("strong", { text: "Cơ chế" }), el("span", { class: "count", text: list2.length }), add));
+  list2.forEach((m, i) => {
+    const entry = mechEntry(spec, m[spec.kind]);
+    const row = el("div", { class: "mech" }, el("div", { class: "list-head" },
+      el("span", { class: "badge apk", text: entry ? entry.name : `kind ${m[spec.kind]}` }),
+      entry && entry.payload_class ? el("span", { class: "hint mono", text: entry.payload_class }) : null,
+      el("span", { style: { marginLeft: "auto" } }),
+      el("button", { class: "small ghost danger", text: "✕", onclick: () => { list2.splice(i, 1); changed(true); } })));
+    if (entry && entry.payload) {
+      const desc = { k: "obj", ref: entry.payload };
+      let obj = payloadCache.get(m);
+      if (!obj) { let raw = {}; try { raw = readPayload(spec, m) || {}; } catch (e) {} obj = coerce(desc, raw, { matched: 0, missing: 0, ignored: 0, bad: 0 }); payloadCache.set(m, obj); }
+      if (cls(entry.payload).fields.length) {
+        const form = objEditor(desc, () => payloadCache.get(m), x => payloadCache.set(m, x), "mech", { top: true });
+        const sync = () => setTimeout(() => { writePayload(spec, m, serialize(desc, payloadCache.get(m))); renderSide(); scheduleSave(); }, 0);
+        ["input", "change", "click"].forEach(ev => form.addEventListener(ev, sync));
+        row.append(form);
+      } else row.append(el("div", { class: "hint", text: "Cơ chế này không có tham số trong game." }));
+    } else {
+      const t = el("textarea", { rows: 2, title: "payload JSON", oninput: e => {
+        if (spec.text === false) { try { m[spec.payload] = JSON.parse(e.target.value || "{}"); } catch (err) { return; } } else m[spec.payload] = e.target.value;
+        changed(false); } });
+      t.value = spec.text === false ? JSON.stringify(m[spec.payload] || {}) : (m[spec.payload] || "{}"); row.append(el("div", { class: "hint", text: "Không có class tham số từ APK — nhập JSON." }), t);
+    }
+    box.append(row);
+  });
+  return box;
+}
+function inspector(lv) {
+  const box = el("div", { class: "inspector" });
+  const it = objOf(lv, B.sel);
+  if (!it) {
+    box.append(el("div", { class: "hint", text: "Chưa chọn object. Dùng ➤ Chọn rồi bấm vào object; kéo để di chuyển." }));
+    if (PR.levelMechanics) box.append(el("h4", { text: "Cơ chế cấp level" }), mechanicsEditor(lv, PR.levelMechanics, "level", ROOT));
+    if (PR.links) {
+      const lk = PR.links, links = getP(lv, lk.list) || [];
+      if (links.length) box.append(el("h4", { text: "Liên kết" }), ...links.map((l, i) => el("div", { class: "list-item" },
+        el("span", { class: "mono", text: `${l[lk.source]} → ${l[lk.target]}` }),
+        el("button", { class: "small ghost danger", text: "✕", onclick: () => { links.splice(i, 1); changed(true); } }))));
+    }
+    return box;
+  }
+  const L = PR.layers[B.sel.li], ref = LREF(L);
+  const head = el("div", { class: "list-head" }, el("strong", { text: `${L.name} #${B.sel.i}` }));
+  if (L.id) head.append(el("label", { class: "hint" }, " id ", el("input", { type: "number", value: it[L.id], style: { width: "80px" }, onchange: e => {
+    const old = it[L.id], v = +e.target.value; it[L.id] = v;
+    if (PR.links) (getP(lv, PR.links.list) || []).forEach(l => { if (l[PR.links.source] === old) l[PR.links.source] = v; if (l[PR.links.target] === old) l[PR.links.target] = v; });
+    changed(true); } })));
+  head.append(el("span", { style: { marginLeft: "auto" } }), el("button", { class: "small danger", text: "Xóa", onclick: () => { removeObj(lv, B.sel); B.sel = null; changed(true); } }));
+  box.append(head);
+  const cells = itemCells(L, it);
+  box.append(el("div", { class: "hint", text: L.mode === "path" ? `${cells.length} ô · đầu (${cells[0]?.x},${cells[0]?.y}) → cuối (${cells[cells.length - 1]?.x},${cells[cells.length - 1]?.y})` : `Ô: ${cells.map(c => `(${c.x},${c.y})`).join(" ")}` }));
+  if (L.color) {
+    const cd = colorDesc(L), whole = descAt(ref, L.color), values = cd.k === "enum" ? enm(cd.ref).members.map(m => m[0]) : Array.from({ length: B.colors }, (_, i) => i);
+    const row = el("div", { class: "toolbar-row" }, el("span", { class: "hint", text: whole.k === "list" ? "Màu cả object:" : "Màu:" }));
+    for (const v of values) row.append(el("span", { class: "swatch" + (itemColor(L, it, 0) === v ? " on" : ""), onclick: () => { it[L.color] = whole.k === "list" ? (cells.length ? cells : [0]).map(() => v) : v; changed(true); } }, el("i", { style: { background: fillFor(cd, v) } }), cd.k === "enum" ? enumLabel(cd, v) : String(v)));
+    if (L.mode === "path") row.append(el("button", { class: "small", text: "⇄ Đảo đầu/cuối", onclick: () => { it[L.path].reverse(); if (Array.isArray(it[L.color])) it[L.color].reverse(); changed(true); } }));
+    box.append(row);
+  } else if (L.mode === "path") box.append(el("button", { class: "small", text: "⇄ Đảo đầu/cuối", onclick: () => { it[L.path].reverse(); changed(true); } }));
+  if (L.mechanics) box.append(mechanicsEditor(it, L.mechanics, layerTarget(L), ref));
+  if (ref) {
+    const skip = new Set([L.position, L.x, L.y, L.path, L.color, L.id, L.mechanics && L.mechanics.field].filter(Boolean));
+    if (cls(ref).fields.some(f => !skip.has(f.json))) box.append(el("h4", { text: "Thuộc tính khác" }), objEditor({ k: "obj", ref }, () => it, () => {}, `$.${L.list}[${B.sel.i}]`, { top: true, skip }));
+  }
+  return box;
+}
+
+/* play test + solver UI */
+function startPlay(lv) {
+  const sim = simFrom(lv), { snake, hole } = ruleLayers(), w = sim.w;
+  const play = { sim, st: sim.start, pick: null, steps: 0, history: [], snakeLayer: snake, holeLayer: hole, msg: "Bấm đầu hoặc cuối một snake, rồi bấm ô kề bên (hoặc phím mũi tên) để đi. Vào hố cùng màu để ra khỏi bàn." };
+  play.cellsOf = i => (play.st.cells[i] || []).map(c => ({ x: c % w, y: (c / w) | 0 }));
+  return play;
+}
+function playStep(si, end, t) {
+  const p = B.play, next = tryMove(p.sim, p.st, si, end, t);
+  if (!next) return false;
+  p.history.push(p.st); p.st = next; p.steps++;
+  p.pick = next.cells[si] ? { si, end } : null;
+  const left = next.cells.filter(Boolean).length;
+  p.msg = left ? `${p.steps} bước · còn ${left} snake.` : `🎉 Thắng sau ${p.steps} bước!`;
+  return true;
+}
+function renderPlay(host, lv) {
+  const p = B.play, w = p.sim.w;
+  const targets = p.pick ? movesFrom(p.sim, p.st).filter(m => m.si === p.pick.si && m.end === p.pick.end).map(m => m.t) : [];
+  const svg = boardSvg(lv, { play: p, pick: p.pick, targets });
+  host.append(svg, el("div", { class: "toolbar-row", style: { marginTop: "8px" } },
+    el("button", { class: "small", text: "↶ Lùi", disabled: !p.history.length, onclick: () => { p.st = p.history.pop(); p.steps--; p.pick = null; renderAll(); } }),
+    el("button", { class: "small", text: "⟲ Chơi lại", onclick: () => { B.play = startPlay(lv); renderAll(); } }),
+    p.solution ? el("button", { class: "small primary", text: `▶ Bước gợi ý ${p.solutionIndex + 1}/${p.solution.length}`, disabled: p.solutionIndex >= p.solution.length, onclick: () => { const m = p.solution[p.solutionIndex++]; playStep(m.si, m.end, m.t); renderAll(); } }) : null));
+  svg.addEventListener("pointerdown", e => {
+    const c = svg.cellAt(e); if (!c) return;
+    const idx = c.y * w + c.x;
+    if (p.pick && targets.includes(idx)) { playStep(p.pick.si, p.pick.end, idx); renderAll(); return; }
+    p.st.cells.forEach((cells, si) => { if (!cells) return; if (cells[0] === idx) p.pick = { si, end: 0 }; else if (cells.length > 1 && cells[cells.length - 1] === idx) p.pick = { si, end: 1 }; });
+    renderAll();
+  });
+}
+document.addEventListener("keydown", e => {
+  if (!B.play || !B.play.pick || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) return;
+  const d = { ArrowUp: [0, B.flip ? 1 : -1], ArrowDown: [0, B.flip ? -1 : 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+  if (!d) return;
+  e.preventDefault();
+  const p = B.play, cells = p.st.cells[p.pick.si]; if (!cells) return;
+  const from = p.pick.end ? cells[cells.length - 1] : cells[0], w = p.sim.w, x = from % w + d[0], y = ((from / w) | 0) + d[1];
+  if (x < 0 || y < 0 || x >= w || y >= p.sim.h) return;
+  if (playStep(p.pick.si, p.pick.end, y * w + x)) renderAll();
+});
+function solveBox(lv) {
+  const r = B.solve, box = el("div", { class: r.ok ? "okbox" : "warnbox" });
+  if (r.running) { box.append("Đang giải…"); return box; }
+  const ignored = ignoredMechanics(lv);
+  if (r.ok) box.append(`✓ Giải được: ít nhất ${r.moves.length} bước (đã xét ${r.explored.toLocaleString()} trạng thái).`,
+    el("button", { class: "small", text: "Xem lời giải", onclick: () => { B.play = startPlay(lv); B.play.solution = r.moves; B.play.solutionIndex = 0; B.solve = null; renderAll(); } }));
+  else box.append(r.msg);
+  if (ignored.length) box.append(el("span", { class: "hint", text: ` Bộ giải chỉ dùng luật cơ bản; bỏ qua: ${ignored.join(", ")}.` }));
+  box.append(el("button", { class: "small ghost", text: "✕", onclick: () => { B.solve = null; renderAll(); } }));
+  return box;
+}
+
+/* ⚙ profile designer */
+function profilePanel(lv) {
+  const panel = el("div", { class: "setup" });
+  const commit = () => { saveProfile(); B.sel = null; B.play = null; B.solve = null; renderAll(); };
+  const sel = (value, options, onchange, empty = "—") => {
+    const s = el("select", { onchange: e => { onchange(e.target.value); commit(); } }, empty !== null ? el("option", { value: "", text: empty }) : null,
+      options.map(o => { const [v, t] = Array.isArray(o) ? o : [o, o]; return el("option", { value: v, text: t }); }));
+    s.value = value || ""; return s;
+  };
+  const row = (label, ...kids) => el("label", { class: "setup-row" }, el("span", { class: "hint", text: label }), ...kids);
+  const ints = pathsOf(ROOT, d => d.k === "int"), lists = pathsOf(ROOT, d => d.k === "list");
+  panel.append(el("div", { class: "toolbar-row" }, el("strong", { text: "⚙ Thiết lập bàn chơi" }),
+    el("span", { class: "hint", text: "Gán field của LevelData cho từng vai trò. Lưu trong trình duyệt; xuất file để dùng lại cho lần build sau hoặc game cùng thể loại." }),
+    el("span", { style: { marginLeft: "auto" } }),
+    el("button", { class: "small", text: "Tự đoán lại", onclick: () => { if (confirm("Thay thiết lập hiện tại bằng bản tự đoán?")) { PR = guessProfile(); commit(); } } }),
+    D.saved_profile ? el("button", { class: "small", text: "Dùng profile từ file", onclick: () => { PR = clone(D.saved_profile); commit(); } }) : null,
+    el("button", { class: "small", text: "Nhập profile…", onclick: () => { const f = el("input", { type: "file", accept: ".json" }); f.onchange = async () => { try { const p = JSON.parse(await f.files[0].text()); if (!Array.isArray(p.layers)) throw new Error("thiếu layers"); PR = p; commit(); toast("Đã nhập profile."); } catch (e) { toast("Profile không hợp lệ: " + e.message); } }; f.click(); } }),
+    el("button", { class: "small primary", text: "Xuất levelEditor.profile.json", title: "Lưu file này cạnh LevelData.cs; lần tạo editor sau tool tự dùng.", onclick: () => download("levelEditor.profile.json", JSON.stringify(PR, null, 2)) })));
+  panel.append(el("div", { class: "setup-grid" },
+    row("Chiều rộng (width)", sel(PR.grid.width, ints, v => { PR.grid.width = v; })),
+    row("Chiều cao (height)", sel(PR.grid.height, ints, v => { PR.grid.height = v; })),
+    row("Luật chơi", sel(PR.rules, Object.entries(RULES), v => { PR.rules = v || "none"; }, null)),
+    row("Cơ chế cấp level", sel(PR.levelMechanics ? PR.levelMechanics.field : "", fieldNames(ROOT, t => !!mechanicSpecOfList(t)), v => { PR.levelMechanics = v ? mechanicSpecFor(ROOT, v) : null; }))));
+  PR.layers.forEach((L, li) => {
+    const ref = LREF(L), coords = fieldNames(ref, t => isCoordDesc(t)), coordLists = fieldNames(ref, t => t.k === "list" && isCoordDesc(t.of));
+    const numbers = fieldNames(ref, t => isNum(t)), colorish = fieldNames(ref, t => t.k === "int" || t.k === "enum" || (t.k === "list" && (t.of.k === "int" || t.of.k === "enum")));
+    const card = el("div", { class: "setup-layer" }, el("div", { class: "toolbar-row" },
+      el("input", { type: "text", value: L.name, style: { width: "150px" }, onchange: e => { L.name = e.target.value || L.list; commit(); } }),
+      el("span", { class: "hint mono", text: L.list }),
+      el("span", { style: { marginLeft: "auto" } }),
+      el("button", { class: "small ghost", text: "↑", disabled: li === 0, onclick: () => { [PR.layers[li - 1], PR.layers[li]] = [PR.layers[li], PR.layers[li - 1]]; commit(); } }),
+      el("button", { class: "small ghost", text: "↓", disabled: li === PR.layers.length - 1, onclick: () => { [PR.layers[li + 1], PR.layers[li]] = [PR.layers[li], PR.layers[li + 1]]; commit(); } }),
+      el("button", { class: "small ghost danger", text: "✕", onclick: () => { PR.layers.splice(li, 1); commit(); } })));
+    const g = el("div", { class: "setup-grid" },
+      row("List trong LevelData", sel(L.list, lists, v => { L.list = v; }, null)),
+      row("Cách chiếm ô", sel(L.mode, Object.entries(LAYER_MODES), v => { L.mode = v; L.solid = !["flat", "matrix"].includes(v); }, null)),
+      row("Hình vẽ", sel(L.draw, Object.entries(LAYER_DRAWS), v => { L.draw = v; }, null)),
+      row("Chặn ô (không chồng)", el("input", { type: "checkbox", checked: !!L.solid, onchange: e => { L.solid = e.target.checked; commit(); } })));
+    if (L.mode === "point" || L.mode === "shape") {
+      g.append(row("Vị trí {x,y}", sel(L.position, coords, v => { L.position = v; })));
+      if (!L.position) g.append(row("x", sel(L.x, numbers, v => { L.x = v; })), row("y", sel(L.y, numbers, v => { L.y = v; })));
+    }
+    if (L.mode === "shape") g.append(row("Các ô của khối (offset)", sel(L.shape, coordLists, v => { L.shape = v; })));
+    if (L.mode === "path") g.append(row("Chuỗi ô (đầu → cuối)", sel(L.path, coordLists, v => { L.path = v; })));
+    if (L.mode === "flat" || L.mode === "matrix") { const d = descAt(ROOT, L.list), inner = d && (L.mode === "flat" ? d.of : d.of && d.of.of); if (inner && inner.k === "obj") g.append(row("Field giá trị", sel(L.value, fieldNames(inner.ref, t => isScalar(t)), v => { L.value = v; }))); }
+    if (ref && L.mode !== "flat" && L.mode !== "matrix") g.append(
+      row("Màu", sel(L.color, colorish, v => { L.color = v; })),
+      row("Loại", sel(L.type, fieldNames(ref, t => t.k === "enum" || t.k === "int"), v => { L.type = v; })),
+      row("Id (cho liên kết)", sel(L.id, fieldNames(ref, t => t.k === "int"), v => { L.id = v; })),
+      row("Chỉ dùng 1 lần (hố)", sel(L.single, fieldNames(ref, t => t.k === "bool"), v => { L.single = v; })),
+      row("Cơ chế", sel(L.mechanics ? L.mechanics.field : "", fieldNames(ref, t => !!mechanicSpecOfList(t)), v => { L.mechanics = v ? mechanicSpecFor(ref, v) : null; })));
+    card.append(g); panel.append(card);
+  });
+  const addLayer = sel("", lists.filter(p => !PR.layers.some(l => l.list === p)), v => { if (v) { const one = guessProfile().layers.find(l => l.list === v) || { name: v, list: v, mode: "point", draw: "square", solid: true }; PR.layers.push(one); } }, "＋ Thêm lớp từ list…");
+  panel.append(el("div", { class: "toolbar-row" }, addLayer));
+  if (PR.links || pathsOf(ROOT, d => d.k === "list" && d.of.k === "obj").length) {
+    const lk = PR.links || {}, lref = lk.list && descAt(ROOT, lk.list) && descAt(ROOT, lk.list).of.ref;
+    panel.append(el("div", { class: "setup-grid" },
+      row("Liên kết: list", sel(lk.list, pathsOf(ROOT, d => d.k === "list" && d.of.k === "obj"), v => { PR.links = v ? { list: v, source: "", target: "", kind: "" } : null; })),
+      lref ? row("id nguồn", sel(lk.source, fieldNames(lref, t => t.k === "int"), v => { PR.links.source = v; })) : null,
+      lref ? row("id đích", sel(lk.target, fieldNames(lref, t => t.k === "int"), v => { PR.links.target = v; })) : null,
+      lref ? row("loại", sel(lk.kind, fieldNames(lref, t => t.k === "enum" || t.k === "int"), v => { PR.links.kind = v; })) : null));
+  }
+  return panel;
+}
+const mechanicSpecOfList = t => t && t.k === "list" && t.of.k === "obj" && (() => { const inner = cls(t.of.ref).fields; return inner.some(x => x.type.k === "enum") && inner.some(x => x.type.k === "string" || x.type.k === "raw"); })();
+function mechanicSpecFor(ref, field) {
+  const f = cls(ref).fields.find(x => x.json === field); if (!f) return null;
+  const text = x => x.type.k === "string" || x.type.k === "raw";
+  const inner = cls(f.type.of.ref).fields, kind = inner.find(x => x.type.k === "enum"), payload = inner.find(x => text(x) && /payload|json|data|param/i.test(x.json)) || inner.find(text);
+  return kind && payload ? { field, kind: kind.json, payload: payload.json, enum: kind.type.ref, text: payload.type.k === "string" } : null;
+}
+
 /* ---------- render all ---------- */
 function renderAll() {
   if (!S.levels.length) S.levels.push(makeObj(ROOT));
@@ -854,7 +1660,8 @@ function renderAll() {
     el("span", { style: { marginLeft: "auto" } }),
     el("button", { class: "small", text: "Mở/đóng tất cả", onclick: () => { const ds = pane.querySelectorAll("details.obj"); const open = ![...ds].every(d => d.open); ds.forEach(d => { d.open = open; }); } }),
     el("button", { class: "small danger", text: "Đặt lại mặc định", onclick: () => { if (confirm("Đặt lại level này về giá trị mặc định?")) { S.levels[S.cur] = makeObj(ROOT); changed(true); } } })));
-  pane.append(objEditor(rootDesc, () => S.levels[S.cur], x => { S.levels[S.cur] = x; }, "$", { top: true }));
+  pane.append(boardEditor(lv));
+  pane.append(objEditor(rootDesc, () => S.levels[S.cur], x => { S.levels[S.cur] = x; }, "$", { top: true, skip: hasBoard() ? managedFields() : null }));
   pane.scrollTop = top;
   renderList(); renderSide();
 }
