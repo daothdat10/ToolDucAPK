@@ -21,6 +21,7 @@ from ducapk.api_translation import APIConfig, export_api, test_connection
 from ducapk.knowledge_view import KnowledgeGraphView
 from ducapk.eta import ProgressEta, finish_clock, format_duration
 from ducapk.readme_view import ReadmeView
+from ducapk.tech_view import TechStackView
 from ducapk.ghidra_knowledge import GhidraSourceView
 from ducapk.level_editor import (LevelEditorError, build_level_editor, leveldata_sources,
                                  read_leveldata, root_candidates)
@@ -43,10 +44,11 @@ FONT, FONT_SEMI, MONO = "Segoe UI", "Segoe UI Semibold", "Consolas"
 PAGES = [
     ("01", "Phân tích", "APK → class, hàm", "Green"),
     ("02", "Duyệt mã", "Class, hàm, pseudocode", "Sky"),
-    ("03", "API dịch mã", "C → C# qua API", "Violet"),
-    ("04", "Knowledge Graph", "Tri thức về công cụ", "Amber"),
-    ("05", "Level Editor", "APK + LevelData.cs → HTML", "Pink"),
-    ("06", "README", "Hướng dẫn sử dụng", "Sky"),
+    ("03", "Công nghệ", "Engine, SDK, shader", "Green"),
+    ("04", "API dịch mã", "C → C# qua API", "Violet"),
+    ("05", "Knowledge Graph", "Tri thức về công cụ", "Amber"),
+    ("06", "Level Editor", "APK + LevelData.cs → HTML", "Pink"),
+    ("07", "README", "Hướng dẫn sử dụng", "Sky"),
 ]
 PHASE_ACCENTS = {
     "SẴN SÀNG": None, "HOÀN TẤT": "Green", "HOÀN TẤT MỘT PHẦN": "Amber",
@@ -237,21 +239,30 @@ class DucAPKApp(TkinterDnD.Tk):
         self.tabs = tabs
         analysis = ttk.Frame(tabs)
         browser = ttk.Frame(tabs)
+        tech_tab = ttk.Frame(tabs)
         api_tab = ttk.Frame(tabs)
         knowledge = ttk.Frame(tabs)
         level_tab = ttk.Frame(tabs)
         readme_tab = ttk.Frame(tabs)
-        for page in (analysis, browser, api_tab, knowledge, level_tab, readme_tab):
+        for page in (analysis, browser, tech_tab, api_tab, knowledge, level_tab, readme_tab):
             tabs.add(page)
         self.api_tab = api_tab
-        tabs.bind("<<NotebookTabChanged>>", lambda _: self._highlight_nav())
+        self.tech_tab = tech_tab
+        tabs.bind("<<NotebookTabChanged>>", lambda _: (self._highlight_nav(), self._refresh_tech()))
 
         self._build_status_bar(content)
         self._build_analysis_ui(analysis)
         self._build_browser_ui(browser)
         self._build_level_editor_ui(level_tab)
 
-        self._page_header(api_tab, 2, "Dịch và hoàn thiện mã C# bằng API",
+        self._page_header(tech_tab, 2, "Công nghệ game sử dụng",
+                          "Engine, thư viện C#, SDK quảng cáo/analytics và shader nhận diện từ APK; "
+                          "chọn một mục để xem bằng chứng và class game dùng nó.")
+        self.tech_view = TechStackView(tech_tab, COLORS, ACCENTS["Green"][0],
+                                       lambda: self.job, self._set_tech_job)
+        self.tech_view.pack(fill="both", expand=True)
+
+        self._page_header(api_tab, 3, "Dịch và hoàn thiện mã C# bằng API",
                           "Kết nối endpoint tương thích OpenAI, chọn nguồn .c / .cs rồi chạy dịch theo lô.")
         api_canvas = tk.Canvas(api_tab, bg=COLORS["background"], highlightthickness=0)
         api_scroll = ttk.Scrollbar(api_tab, orient="vertical", command=api_canvas.yview)
@@ -270,7 +281,7 @@ class DucAPKApp(TkinterDnD.Tk):
                 bind_scroll(child)
         bind_scroll(api_body)
 
-        self._page_header(knowledge, 3, "Kho tri thức và mã nguồn",
+        self._page_header(knowledge, 4, "Kho tri thức và mã nguồn",
                           "Bản đồ chức năng của DucAPK và kho mã nguồn tham khảo để tra cứu.")
         knowledge_nav = ttk.Frame(knowledge)
         knowledge_nav.pack(fill="x", padx=12, pady=(0, 8))
@@ -299,7 +310,7 @@ class DucAPKApp(TkinterDnD.Tk):
         self.ghidra_source_view.pack(fill="both", expand=True)
         graph_tab.tkraise()
 
-        self._page_header(readme_tab, 5, "Hướng dẫn sử dụng DucAPK",
+        self._page_header(readme_tab, 6, "Hướng dẫn sử dụng DucAPK",
                           "Nội dung README.md của tool; chọn mục ở bên trái để nhảy tới phần cần đọc.")
         ReadmeView(readme_tab, ROOT / "README.md",
                    {**COLORS, "blue": ACCENTS["Sky"][0]}).pack(fill="both", expand=True)
@@ -307,6 +318,16 @@ class DucAPKApp(TkinterDnD.Tk):
         self.phase_var.trace_add("write", lambda *_: self._paint_phase())
         self._paint_phase()
         self._highlight_nav()
+
+    def _refresh_tech(self):
+        if self.tabs.select() == str(self.tech_tab):
+            self.tech_view.refresh()
+
+    def _set_tech_job(self, job: Path):
+        if (job / "methods.sqlite").is_file():
+            self._load_job(job)
+        else:
+            self.job = job.resolve()
 
     def _show_knowledge_page(self, show_ghidra_source: bool):
         if show_ghidra_source:
@@ -676,7 +697,7 @@ class DucAPKApp(TkinterDnD.Tk):
         self.code.tag_configure("meta_value", foreground=COLORS["text"], font=(MONO, 10, "bold"))
         self.code.tag_configure("rule", foreground=COLORS["border"])
 
-    # ---------- 03 API ----------
+    # ---------- 04 API ----------
     def _build_api_ui(self, tab):
         card, connection = self._card(tab, "1", "Kết nối API", "Violet",
                                       "Chat Completions tương thích OpenAI")
@@ -751,9 +772,9 @@ class DucAPKApp(TkinterDnD.Tk):
         self.api_log.configure(state="disabled")
         log_frame.pack(fill="both", expand=True)
 
-    # ---------- 05 Level Editor ----------
+    # ---------- 06 Level Editor ----------
     def _build_level_editor_ui(self, page):
-        self._page_header(page, 4, "Tạo Level Editor HTML từ APK và LevelData.cs",
+        self._page_header(page, 5, "Tạo Level Editor HTML từ APK và LevelData.cs",
                           "Đọc cơ chế game (enum, class, level mẫu) trong APK, lấy schema từ LevelData.cs "
                           "và sinh levelEditor.html để xếp level, xuất JSON đúng định dạng.")
         card, form = self._card(page, "1", "Nguồn", "Pink", "APK cho cơ chế game · LevelData.cs cho schema")
@@ -1522,6 +1543,7 @@ class DucAPKApp(TkinterDnD.Tk):
                 failed_count = 0
         self.retry_btn.configure(state="normal" if with_ghidra and failed_count else "disabled")
         self._refresh_classes()
+        self._refresh_tech()
 
     def _search_changed(self, *_):
         if self.search_after is not None:
@@ -1610,6 +1632,7 @@ class DucAPKApp(TkinterDnD.Tk):
             self.cancel.set()
             self.after(500, self._wait_to_close)
             return
+        self.tech_view.stop()
         if self.database is not None:
             self.database.close()
         self.destroy()

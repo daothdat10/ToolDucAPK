@@ -270,6 +270,28 @@ public enum PuzzleElementType
                          {"rotaId": 216033, "adzList": [], "name": "x" * 64})
         self.assertIsNone(levels._decrypt_config_payload(bytes(range(32))))
 
+    def test_level_data_serializer_swap_aes_round_trip(self):
+        level = {"LevelDifficulty": 0, "SizeX": 13, "SizeY": 13,
+                 "ColorData": [{"ColorIndex": 2, "CubeDataIds": list(range(40))}]}
+        key, iv = levels._SWAP_AES_LEVEL_KEYS[0]
+
+        def encrypt(plain: bytes) -> bytes:
+            padding = 16 - (len(plain) % 16)
+            data = bytearray(levels.AES.new(key, levels.AES.MODE_CBC, iv).encrypt(
+                plain + bytes([padding]) * padding))
+            size = len(data)
+            for index in range(size):
+                other = (7 * index + 3) % size
+                data[index], data[other] = data[other], data[index]
+            return levels.base64.b64encode(bytes(data))
+
+        plain = json.dumps(level).encode()
+        self.assertEqual(levels._decrypt_swap_aes_level(encrypt(plain)), level)
+        self.assertEqual(levels._decrypt_swap_aes_level(
+            b"\xef\xbb\xbf" + encrypt(levels.gzip.compress(plain))), level)
+        self.assertIsNone(levels._decrypt_swap_aes_level(levels.base64.b64encode(bytes(range(96)))))
+        self.assertEqual(levels._level_number_from_name("Level_2378"), 2378)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -142,6 +142,31 @@ dialog .dlg-body{padding:12px 14px;max-height:70vh;overflow:auto}
 .board-svg .mech-dot{fill:var(--violet);stroke:#fff;stroke-width:1}
 .inspector{margin-top:12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg)}
 .inspector h4{margin:12px 0 6px}
+.gunpanel{margin-top:12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg)}
+.gunpanel table{border-collapse:collapse;font-size:12px;margin:6px 0}
+.gunpanel td,.gunpanel th{padding:3px 8px;border-bottom:1px solid var(--border);text-align:right}
+.gunpanel td:first-child,.gunpanel th:first-child{text-align:left}
+.gunpanel tr.bad td{color:var(--rose)}
+.gunpanel tr.pick{cursor:pointer}
+#tab-params .gunpanel,#tab-params .inspector{margin-top:0;margin-bottom:10px}
+#tab-params input[type=number],#tab-params input[type=text],#tab-params select{max-width:100%;width:100%;box-sizing:border-box}
+#tab-params .gunpanel table{width:100%;font-size:11px}
+#tab-params .gunpanel td,#tab-params .gunpanel th{padding:3px 4px}
+#tab-params .swatch{white-space:nowrap}
+.game-stage{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px;border-radius:12px;background:var(--surface);border:1px solid var(--border)}
+.game-stage .grid-wrap{max-width:100%;max-height:none}
+.gstage-units{width:100%;border-top:1px dashed var(--border);padding-top:8px;display:flex;flex-direction:column;align-items:center}
+.gstage-units .gcols{justify-content:center;max-width:100%}
+.gcols{display:flex;gap:14px;overflow-x:auto;padding:8px 2px;align-items:flex-start}
+.gcol{display:flex;flex-direction:column;gap:6px;align-items:center;min-width:70px}
+.gcol-h{font-size:11px;color:var(--muted);display:flex;gap:4px;align-items:center}
+.gcard{position:relative;width:62px;height:50px;border-radius:10px;display:flex;align-items:center;justify-content:center;font:800 19px/1 system-ui,sans-serif;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7),0 0 1px #000;cursor:pointer;border:2px solid rgba(0,0,0,.25);box-shadow:inset 0 -6px 0 rgba(0,0,0,.18)}
+.gcard.sel{outline:3px solid var(--accent);outline-offset:2px}
+.gcard.hidden-unit::after{content:"?";position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:#4B5563;color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;border:1px solid #fff}
+.gcard .badges{position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);display:flex;gap:2px}
+.gcard .badges span{font:600 9px/1 system-ui;background:#111827;color:#fff;border-radius:6px;padding:2px 4px;text-shadow:none;white-space:nowrap}
+.gcard.spawner{border-style:dashed;background:var(--surface);color:var(--text);font-size:13px;text-shadow:none}
+.gcard.add{background:transparent;border:2px dashed var(--border);color:var(--muted);font-size:20px;text-shadow:none;box-shadow:none;height:34px}
 .mech-list{margin-top:10px;display:flex;flex-direction:column;gap:6px}
 .mech{border:1px solid var(--border);border-radius:7px;padding:6px 10px;background:var(--panel)}
 .setup{border:1px dashed var(--accent);border-radius:8px;padding:10px;margin:8px 0;background:var(--bg)}
@@ -182,13 +207,14 @@ dialog .dlg-body{padding:12px 14px;max-height:70vh;overflow:auto}
   <section id="editorPane"></section>
   <aside id="rightPane">
     <div class="tabs">
-      <button data-tab="json" class="on">JSON</button><button data-tab="mech">Cơ chế game</button>
+      <button data-tab="json" class="on">JSON</button><button data-tab="params">Thông số</button><button data-tab="mech">Cơ chế game</button>
       <button data-tab="samples">Level từ APK</button><button data-tab="check">Kiểm tra</button>
     </div>
     <div class="tab-body on" id="tab-json">
       <div class="toolbar-row"><button id="btnCopy" class="small">Sao chép</button><span class="hint">JSON của level đang chọn, đúng schema LevelData.</span></div>
       <pre id="jsonOut"></pre>
     </div>
+    <div class="tab-body" id="tab-params"></div>
     <div class="tab-body" id="tab-mech"></div>
     <div class="tab-body" id="tab-samples">
       <div class="toolbar-row"><input type="text" id="sampleFilter" placeholder="Lọc theo tên/nhóm…" style="flex:1"><button id="btnImportAllSamples" class="small">Nhập tất cả đã lọc</button></div>
@@ -276,6 +302,10 @@ function makeObj(key, depth = 0) {
   return o;
 }
 const GRID_LIST_NAMES = /cell|tile|grid|map|board|slot|block|layout|square/i;
+/* int[] of flat cell ids: CubeDataIds, PixelIds, PipePositions, HiddenCubeDataIds… (names pass through norm) */
+const ID_FIELD_NAMES = /(ids|indices|indexes|positions|pixels|cells)$/;
+const ID_LIST_NAMES = /(ids|indices|indexes)$/;
+const OBSTACLE_NAMES = /block|door|lock|plank|cookie|wall|obstacle|rock|stone|ice|crate|box/;
 const isFlatGrid = (desc, name = "") => desc.k === "list" && GRID_LIST_NAMES.test(name) && (isScalar(desc.of) || (desc.of.k === "obj" && cls(desc.of.ref).src !== "unity" && !coordFields(desc.of.ref) && typeField(desc.of.ref)));
 
 /* coerce any JSON (APK data, imported files) into the LevelData shape */
@@ -785,6 +815,17 @@ function validate(lv) {
 }
 
 /* ---------- side panels ---------- */
+function showTab(name) {
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x.dataset.tab === name));
+  document.querySelectorAll(".tab-body").forEach(x => x.classList.toggle("on", x.id === "tab-" + name));
+}
+/* right-hand "Thông số" tab: selected unit/object, colour balance and generators for the board on the left */
+function renderParams(lv) {
+  const box = $("#tab-params"); box.textContent = "";
+  if (!lv || !hasBoard()) { box.append(el("div", { class: "hint", text: "Chưa có bàn chơi — thiết lập trong ⚙ Thiết lập bàn chơi." })); return; }
+  if (GR) box.append(gunPanel(lv));
+  box.append(inspector(lv));
+}
 function renderSide() {
   const lv = S.levels[S.cur];
   $("#jsonOut").textContent = lv ? JSON.stringify(levelJSON(lv), null, 2) : "";
@@ -871,12 +912,15 @@ function showDialog(title, data, action, run) {
    grid size, layers (each a list in LevelData), how each layer occupies cells, its colour/type/id fields,
    mechanics, links between objects and optional built-in rules for play test and solver. */
 const PALETTE = ["#EF4444", "#3B82F6", "#22C55E", "#EAB308", "#A855F7", "#F97316", "#EC4899", "#14B8A6", "#94A3B8", "#84CC16", "#06B6D4", "#F43F5E"];
-const LAYER_MODES = { point: "Điểm (1 ô)", shape: "Khối nhiều ô", path: "Chuỗi ô (snake)", cells: "Danh sách ô", flat: "Lưới phẳng w×h", matrix: "Ma trận [y][x]" };
+const LAYER_MODES = { point: "Điểm (1 ô)", shape: "Khối nhiều ô", path: "Chuỗi ô (snake)", cells: "Danh sách ô", ids: "Nhóm chỉ số ô (id phẳng)", idlist: "List chỉ số ô int[] (id phẳng)", flat: "Lưới phẳng w×h", matrix: "Ma trận [y][x]" };
+/* index layers store cells as flat ids (row- or column-major, see PR.grid.order), e.g. ColorData[].CubeDataIds */
+const ID_MODES = ["ids", "idlist"];
 const LAYER_DRAWS = { square: "Ô vuông", circle: "Hình tròn", ring: "Hố (vòng)", block: "Tường (gạch chéo)", snake: "Snake", tile: "Nền tô màu" };
 const RULES = { none: "Không (chỉ vẽ level)", snake_exit: "Snake ra hố cùng màu (Gecko/Snake Out)" };
-const PROFILE_KEY = "ducapk-level-editor-profile:" + D.meta.schema_id;
-const B = { tool: "add", layer: 0, colors: 8, pal: {}, sel: null, linkFrom: null, linkKind: null, flip: true, draft: null, paint: null, drag: null, play: null, solve: null, setup: false };
-const colorHex = c => PALETTE[((c % PALETTE.length) + PALETTE.length) % PALETTE.length];
+const PROFILE_KEY = "ducapk-level-editor-profile:v2:" + D.meta.schema_id;
+const B = { tool: "add", layer: 0, colors: 8, gridW: 1, pal: {}, sel: null, linkFrom: null, linkKind: null, flip: true, draft: null, paint: null, drag: null, play: null, solve: null, setup: false };
+/* integer colours follow the game's colour enum when the colour rule was verified on its levels */
+const colorHex = c => GR && D.color_enum ? gameColor(c) : PALETTE[((c % PALETTE.length) + PALETTE.length) % PALETTE.length];
 const ck = (x, y) => x + "," + y;
 
 /* schema paths ("a" or "a.b") */
@@ -936,7 +980,8 @@ function guessProfile() {
   for (const p of pathsOf(ROOT, d => d.k === "list").filter(p => !p.includes(".0."))) {
     const of = descAt(ROOT, p).of, n = lastName(p);
     let L = null;
-    if (isPureCoord(of)) L = { mode: "cells", draw: /hole|exit|goal/.test(n) ? "ring" : "block" };
+    if (of.k === "int" && ID_LIST_NAMES.test(n)) L = { mode: "idlist", draw: "ring" };
+    else if (isPureCoord(of)) L = { mode: "cells", draw: /hole|exit|goal/.test(n) ? "ring" : "block" };
     else if (of.k === "obj" && cls(of.ref).src !== "unity") {
       const ref = of.ref, F = cls(ref).fields;
       const pick = (test, re, strict) => { const m = F.filter(f => test(f.type, f)); const hit = m.find(f => re && re.test(norm(f.json))); return (hit || (strict ? null : m[0]) || {}).json || ""; };
@@ -948,14 +993,19 @@ function guessProfile() {
       const type = pick((t, f) => f.json !== color && (t.k === "enum" || (t.k === "int" && /type|kind|element|item|piece|tile|shape/.test(norm(f.json)))), /type|kind|element|item|piece/);
       const extra = { color, type: type && type !== color ? type : "", id: pick(t => t.k === "int", /^(id|entityid|uid|snakeid)$/, true),
         single: pick(t => t.k === "bool", /single|once/, true), mechanics: mechanicSpec(ref) };
-      if (pathF && !posF && !(xF && yF)) L = { mode: "path", path: pathF, draw: "snake", ...extra };
+      const idsF = !pathF && !posF && !(xF && yF) ? pick(t => t.k === "list" && t.of.k === "int", ID_FIELD_NAMES, true) : "";
+      if (idsF) L = { mode: "ids", ids: idsF, ...extra,
+        draw: OBSTACLE_NAMES.test(n) ? "block" : /pipe|hole|exit|goal/.test(n) ? "circle" : extra.color ? "tile" : "square" };
+      else if (pathF && !posF && !(xF && yF)) L = { mode: "path", path: pathF, draw: "snake", ...extra };
       else if (posF || (xF && yF)) L = { mode: shapeF ? "shape" : "point", position: posF, x: posF ? "" : xF.json, y: posF ? "" : yF.json, shape: shapeF,
         draw: /hole|exit|goal|target/.test(n) ? "ring" : /wall|block|obstacle|rock|stone/.test(n) ? "block" : "square", ...extra };
       else if (prof.grid.width && GRID_LIST_NAMES.test(n) && typeField(ref) && !F.some(f => W_NAMES.test(norm(f.json)))) L = { mode: "flat", value: typeField(ref).json, draw: "tile" };
     } else if (isScalar(of) && prof.grid.width && GRID_LIST_NAMES.test(n)) L = { mode: "flat", draw: "tile" };
     else if (of.k === "list" && isScalar(of.of)) L = { mode: "matrix", draw: "tile" };
-    if (L) prof.layers.push({ name: p, list: p, solid: !["flat", "matrix"].includes(L.mode), ...L });
+    if (L) prof.layers.push({ name: p, list: p, solid: !["flat", "matrix", ...ID_MODES].includes(L.mode), ...L });
   }
+  const inferred = (D.game_rules || []).map(r => r.cell_order).find(Boolean);
+  if (prof.layers.some(l => ID_MODES.includes(l.mode))) prof.grid.order = inferred ? inferred.order : "row";
   const order = { tile: 0, block: 1, ring: 2, square: 3, circle: 3, snake: 4 };
   prof.layers.sort((a, b) => order[a.draw] - order[b.draw]);
   const linkPath = pathsOf(ROOT, d => d.k === "list" && d.of.k === "obj").filter(p => !p.includes(".0.")).find(p => { const f = fieldNames(descAt(ROOT, p).of.ref, t => t.k === "int").map(norm); return f.some(x => /^source/.test(x)) && f.some(x => /^target/.test(x)); });
@@ -978,15 +1028,30 @@ function saveProfile() { store.set(PROFILE_KEY, JSON.stringify(PR)); }
 const hasBoard = () => !!(PR && PR.layers.length && PR.grid.width && PR.grid.height);
 function managedFields() {
   const top = p => p && !p.includes(".") ? p : null;
-  return new Set([...PR.layers.map(l => top(l.list)), top(PR.links && PR.links.list), PR.levelMechanics && PR.levelMechanics.field].filter(Boolean));
+  return new Set([...PR.layers.map(l => top(l.list)), top(PR.links && PR.links.list), PR.levelMechanics && PR.levelMechanics.field,
+    hasBoard() && GR && GR.columns && GR.columns.list].filter(Boolean));
 }
 
 /* layer accessors */
-const gw = lv => Math.max(1, getP(lv, PR.grid.width) | 0), gh = lv => Math.max(1, getP(lv, PR.grid.height) | 0);
+/* gw/gh also record the size that converts flat cell ids for the level being drawn/validated;
+   PR.grid.order: "row" → id = y·W + x, "column" → id = x·H + y (inferred from the game's levels) */
+const gw = lv => (B.gridW = Math.max(1, getP(lv, PR.grid.width) | 0)), gh = lv => (B.gridH = Math.max(1, getP(lv, PR.grid.height) | 0));
+const byColumn = () => PR.grid.order === "column";
+const idCell = id => byColumn() ? { x: Math.floor((id | 0) / B.gridH), y: (id | 0) % B.gridH } : { x: (id | 0) % B.gridW, y: Math.floor((id | 0) / B.gridW) };
+const cellId = c => byColumn() ? c.x * B.gridH + c.y : c.y * B.gridW + c.x;
+function removeId(L, it, id) {
+  const ids = it && it[L.ids], k = Array.isArray(ids) ? ids.indexOf(id) : -1;
+  if (k < 0) return false;
+  ids.splice(k, 1);
+  if (L.color && Array.isArray(it[L.color]) && it[L.color].length > k) it[L.color].splice(k, 1);
+  return true;
+}
 const LREF = L => { const d = descAt(ROOT, L.list); return d && d.k === "list" && d.of.k === "obj" ? d.of.ref : null; };
 function items(lv, L) { let a = getP(lv, L.list); if (!Array.isArray(a)) { a = []; setP(lv, L.list, a); } return a; }
 function itemCells(L, it) {
+  if (L.mode === "idlist") return typeof it === "number" ? [idCell(it)] : [];
   if (!it || typeof it !== "object") return [];
+  if (L.mode === "ids") return (Array.isArray(it[L.ids]) ? it[L.ids] : []).map(idCell);
   if (L.mode === "cells") return [{ x: it.x | 0, y: it.y | 0 }];
   if (L.mode === "path") return (Array.isArray(it[L.path]) ? it[L.path] : []).map(c => ({ x: c.x | 0, y: c.y | 0 }));
   const p = L.position ? (it[L.position] || {}) : { x: it[L.x], y: it[L.y] }, base = { x: p.x | 0, y: p.y | 0 };
@@ -1189,6 +1254,8 @@ function boardIssues(lv) {
   if (PR.links) (getP(lv, PR.links.list) || []).forEach((l, i) => [PR.links.source, PR.links.target].forEach(k => {
     if (k && !count.has(l[k])) out.push({ err: true, path: `$.${PR.links.list}[${i}]`, msg: `link #${i}: ${k}=${l[k]} không trỏ tới object nào` });
   }));
+  if (GR) for (const r of grBalance(lv)) if (r.diff)
+    out.push({ err: true, path: "$", msg: `Màu ${r.c} ${colorName(r.c)}: ${r.pix + r.src} khối nhưng ${GR.unit.count} = ${r.bul} (${r.diff > 0 ? "thừa" : "thiếu"} ${Math.abs(r.diff)})` });
   if (PR.rules === "snake_exit") {
     const { snake, hole } = ruleLayers();
     if (snake >= 0 && hole >= 0) {
@@ -1244,11 +1311,13 @@ function boardSvg(lv, opts = {}) {
         if (cells.length > 1) s("circle", { cx: px(tl.x), cy: py(tl.y), r: cs * 0.12, fill: "#fff", opacity: .75 }, svg);
         if (play && opts.pick && opts.pick.si === i) { const c = opts.pick.end ? tl : hd; s("circle", { cx: px(c.x), cy: py(c.y), r: cs * 0.44, fill: "none", stroke: "var(--accent)", "stroke-width": 3 }, svg); }
       } else {
-        for (const c of cells) {
-          if (L.draw === "ring") s("circle", { cx: px(c.x), cy: py(c.y), r: cs * 0.36, fill: "#05070f", stroke: fill, "stroke-width": cs * 0.13, "stroke-dasharray": L.single && it[L.single] ? `${cs * 0.18} ${cs * 0.1}` : "none" }, svg);
-          else if (L.draw === "block") { s("rect", { x: px(c.x) - cs / 2 + 2, y: py(c.y) - cs / 2 + 2, width: cs - 4, height: cs - 4, rx: 3, class: "wall", ...(L.color || L.type ? { fill } : {}) }, svg); s("path", { d: `M${px(c.x) - cs / 4},${py(c.y) - cs / 4}L${px(c.x) + cs / 4},${py(c.y) + cs / 4}M${px(c.x) + cs / 4},${py(c.y) - cs / 4}L${px(c.x) - cs / 4},${py(c.y) + cs / 4}`, class: "wall-x" }, svg); }
-          else if (L.draw === "circle") s("circle", { cx: px(c.x), cy: py(c.y), r: cs * 0.38, fill }, svg);
-          else s("rect", { x: px(c.x) - cs * 0.42, y: py(c.y) - cs * 0.42, width: cs * 0.84, height: cs * 0.84, rx: cs * 0.14, fill, stroke: "rgba(255,255,255,.35)" }, svg);
+        const perCell = L.color && Array.isArray(it[L.color]);
+        for (const [j, c] of cells.entries()) {
+          const cf = perCell ? fillFor(cd, itemColor(L, it, j)) || fill : fill;
+          if (L.draw === "ring") s("circle", { cx: px(c.x), cy: py(c.y), r: cs * 0.36, fill: "#05070f", stroke: cf, "stroke-width": cs * 0.13, "stroke-dasharray": L.single && it[L.single] ? `${cs * 0.18} ${cs * 0.1}` : "none" }, svg);
+          else if (L.draw === "block") { s("rect", { x: px(c.x) - cs / 2 + 2, y: py(c.y) - cs / 2 + 2, width: cs - 4, height: cs - 4, rx: 3, class: "wall", ...(L.color || L.type ? { fill: cf } : {}) }, svg); s("path", { d: `M${px(c.x) - cs / 4},${py(c.y) - cs / 4}L${px(c.x) + cs / 4},${py(c.y) + cs / 4}M${px(c.x) + cs / 4},${py(c.y) - cs / 4}L${px(c.x) - cs / 4},${py(c.y) + cs / 4}`, class: "wall-x" }, svg); }
+          else if (L.draw === "circle") s("circle", { cx: px(c.x), cy: py(c.y), r: cs * 0.38, fill: cf }, svg);
+          else s("rect", { x: px(c.x) - cs * 0.42, y: py(c.y) - cs * 0.42, width: cs * 0.84, height: cs * 0.84, rx: cs * 0.14, fill: cf, stroke: "rgba(255,255,255,.35)" }, svg);
           if (sel) box(c, "sel-box");
         }
         if (L.draw === "square" || L.draw === "circle") { const lbl = itemLabel(L, it); if (lbl && cs >= 24) s("text", { x: px(cells[0].x), y: py(cells[0].y) + cs * 0.1, class: "ent-t", "font-size": Math.max(8, cs * 0.24) }, svg).textContent = (lbl.replace(/[a-z]/g, "") || lbl).slice(0, 3); }
@@ -1272,6 +1341,7 @@ function boardSvg(lv, opts = {}) {
 /* editing */
 function boardEditor(lv) {
   const wrap = el("div", { class: "gboard" });
+  renderParams(lv);
   const head = el("div", { class: "board-head" }, el("strong", { text: "Bàn chơi" }),
     el("button", { class: "small" + (B.setup ? " primary" : ""), text: "⚙ Thiết lập bàn chơi", onclick: () => { B.setup = !B.setup; renderAll(); } }));
   wrap.append(head);
@@ -1288,7 +1358,7 @@ function boardEditor(lv) {
   const layerBar = el("div", { class: "toolbar-row" }, el("span", { class: "hint", text: "Lớp:" }));
   PR.layers.forEach((l, li) => layerBar.append(el("button", { class: "small" + (li === B.layer ? " primary" : ""), title: LAYER_MODES[l.mode], text: l.name, onclick: () => { B.layer = li; B.sel = null; B.tool = "add"; renderAll(); } })));
   wrap.append(layerBar);
-  const addLabel = { point: "＋ Đặt", shape: "＋ Đặt khối", path: "〰 Vẽ chuỗi", cells: "▦ Bật/tắt ô", flat: "🖌 Tô", matrix: "🖌 Tô" }[L.mode];
+  const addLabel = { point: "＋ Đặt", shape: "＋ Đặt khối", path: "〰 Vẽ chuỗi", cells: "▦ Bật/tắt ô", ids: "🖌 Tô ô", idlist: "▦ Bật/tắt ô", flat: "🖌 Tô", matrix: "🖌 Tô" }[L.mode];
   const tools = [["add", addLabel], ["select", "➤ Chọn / kéo"], ["erase", "✕ Xóa"]];
   if (PR.links) tools.push(["link", "⟷ Liên kết"]);
   const bar = el("div", { class: "toolbar-row" });
@@ -1300,8 +1370,9 @@ function boardEditor(lv) {
     el("button", { class: "small", text: "⚙ Kiểm tra giải được", onclick: () => { B.solve = { running: true }; renderAll(); setTimeout(() => { B.solve = solve(lv); renderAll(); }, 30); } }));
   wrap.append(bar, paletteRow(lv, L));
   if (B.solve) wrap.append(solveBox(lv));
-  const host = el("div", { class: "grid-wrap" });
-  wrap.append(host);
+  const host = el("div", { class: "grid-wrap" }), stage = el("div", { class: "game-stage" }, host);
+  if (GR && GR.columns && !B.play) stage.append(gunColumns(lv));
+  wrap.append(stage);
   if (B.play) { renderPlay(host, lv); wrap.append(el("div", { class: "hint", text: B.play.msg })); return wrap; }
   const draw = () => {
     host.textContent = "";
@@ -1313,14 +1384,15 @@ function boardEditor(lv) {
     svg.addEventListener("pointerup", () => onUp(lv));
   };
   draw();
-  wrap.append(inspector(lv));
   return wrap;
 }
 function paletteRow(lv, L) {
   const row = el("div", { class: "palette" }), st = B.pal[B.layer] || (B.pal[B.layer] = {});
+  if (L.color && LREF(L)) items(lv, L).forEach(it => { const v = it && it[L.color]; (Array.isArray(v) ? v : [v]).forEach(x => { if (typeof x === "number" && x + 1 > B.colors) B.colors = x + 1; }); });
   const swatches = (desc, key, label) => {
     if (!desc) return;
-    const values = desc.k === "enum" ? enm(desc.ref).members.map(([v, n]) => [v, n]) : desc.k === "bool" ? [[false, "false"], [true, "true"]] : Array.from({ length: B.colors }, (_, i) => [i, String(i)]);
+    const values = desc.k === "enum" ? enm(desc.ref).members.map(([v, n]) => [v, n]) : desc.k === "bool" ? [[false, "false"], [true, "true"]]
+      : GR && D.color_enum ? D.color_enum.members.map(([v, n]) => [v, `${v} ${n}`]) : Array.from({ length: B.colors }, (_, i) => [i, String(i)]);
     if (st[key] === undefined) st[key] = values[Math.min(1, values.length - 1)]?.[0] ?? 0;
     row.append(el("span", { class: "hint", text: label }));
     for (const [v, n] of values) row.append(el("span", { class: "swatch" + (st[key] === v ? " on" : ""), title: String(v), onclick: () => { st[key] = v; renderAll(); } }, el("i", { style: { background: fillFor(desc, v) || "var(--cell-empty)" } }), n));
@@ -1344,6 +1416,7 @@ function newItem(lv, L, cells) {
   const ref = LREF(L), st = B.pal[B.layer] || {};
   const it = L.mode === "cells" ? (ref ? makeObj(ref) : {}) : makeObj(ref);
   if (L.mode === "path") { const d = descAt(ref, L.path); it[L.path] = cells.map(c => ({ ...(d && d.of.k === "obj" ? makeObj(d.of.ref) : {}), x: c.x, y: c.y })); }
+  else if (L.mode === "ids") it[L.ids] = cells.map(cellId);
   else setPos(L, it, cells[0].x, cells[0].y);
   if (L.color && st.color !== undefined) { const d = descAt(ref, L.color); it[L.color] = d.k === "list" ? cells.map(() => st.color) : st.color; }
   if (L.type && st.type !== undefined) it[L.type] = st.type;
@@ -1355,6 +1428,12 @@ function newItem(lv, L, cells) {
 function eraseAt(lv, c) {
   const L = PR.layers[B.layer];
   if (L.mode === "flat" || L.mode === "matrix") { setGridValue(lv, L, c.x, c.y, defaultFor(gridValueDesc(L))); changed(true); return; }
+  if (ID_MODES.includes(L.mode)) {
+    const id = cellId(c), arr = items(lv, L);
+    if (L.mode === "idlist") { const k = arr.indexOf(id); if (k >= 0) arr.splice(k, 1); }
+    else { arr.forEach(it => removeId(L, it, id)); pruneEmptyIds(lv, L); }
+    changed(true); return;
+  }
   const hit = hitAt(lv, c); if (hit) { removeObj(lv, hit); B.sel = null; changed(true); }
 }
 function onDown(lv, c, draw) {
@@ -1369,6 +1448,7 @@ function onDown(lv, c, draw) {
   }
   if (B.tool === "select") {
     B.sel = hit ? { li: hit.li, i: hit.i } : null;
+    if (hit) showTab("params");
     const HL = hit && PR.layers[hit.li];
     if (hit && (HL.mode === "point" || HL.mode === "shape" || HL.mode === "cells")) B.drag = { ref: B.sel, from: c, moved: false };
     renderAll(); return;
@@ -1378,6 +1458,21 @@ function onDown(lv, c, draw) {
     case "cells": {
       const arr = items(lv, L), i = arr.findIndex(p => p.x === c.x && p.y === c.y);
       B.paint = i >= 0 ? "remove" : "add"; paintCell(lv, L, c); draw(); return;
+    }
+    case "idlist": B.paint = items(lv, L).includes(cellId(c)) ? "remove" : "add"; paintCell(lv, L, c); draw(); return;
+    case "ids": {
+      /* paint into the group of the chosen colour (or the selected group); a cell already in it toggles off */
+      const id = cellId(c), arr = items(lv, L), st = B.pal[B.layer] || {};
+      const own = arr.findIndex(it => (it[L.ids] || []).includes(id));
+      const sameColor = it => !L.color || st.color === undefined || itemColor(L, it) === st.color;
+      if (own >= 0 && sameColor(arr[own])) { B.paint = "remove"; B.paintItem = own; }
+      else {
+        let target = L.color && st.color !== undefined ? arr.findIndex(it => itemColor(L, it) === st.color)
+          : B.sel && B.sel.li === B.layer ? B.sel.i : -1;
+        if (target < 0) target = newItem(lv, L, []).i;
+        B.paint = "add"; B.paintItem = target; B.sel = { li: B.layer, i: target };
+      }
+      paintCell(lv, L, c); draw(); return;
     }
     case "path": {
       if (hit && hit.li === B.layer) {
@@ -1421,7 +1516,7 @@ function onDrag(lv, c, draw) {
 }
 function onUp(lv) {
   if (B.drag) { const moved = B.drag.moved; B.drag = null; if (moved) changed(true); return; }
-  if (B.paint) { B.paint = null; changed(true); return; }
+  if (B.paint) { B.paint = null; if (PR.layers[B.layer].mode === "ids") pruneEmptyIds(lv, PR.layers[B.layer]); changed(true); return; }
   if (!B.draft) return;
   const L = PR.layers[B.layer], d = B.draft; B.draft = null;
   if (B.extend) {
@@ -1436,7 +1531,29 @@ function onUp(lv) {
   }
   B.sel = newItem(lv, L, d); changed(true);
 }
+/* a colour group left without cells is dropped so the level never carries empty entries */
+function pruneEmptyIds(lv, L) {
+  if (!L.color) return;
+  const arr = items(lv, L), keep = arr.filter(it => (it[L.ids] || []).length);
+  if (keep.length !== arr.length) { arr.splice(0, arr.length, ...keep); B.sel = null; }
+}
 function paintCell(lv, L, c) {
+  if (L.mode === "idlist") {
+    const arr = items(lv, L), id = cellId(c), k = arr.indexOf(id);
+    if (B.paint === "remove" && k >= 0) arr.splice(k, 1);
+    else if (B.paint === "add" && k < 0) arr.push(id);
+    return;
+  }
+  if (L.mode === "ids") {
+    const arr = items(lv, L), id = cellId(c), it = arr[B.paintItem]; if (!it) return;
+    if (B.paint === "remove") { removeId(L, it, id); return; }
+    if (L.color) arr.forEach((other, k) => { if (k !== B.paintItem) removeId(L, other, id); });
+    if (!Array.isArray(it[L.ids])) it[L.ids] = [];
+    if (it[L.ids].includes(id)) return;
+    it[L.ids].push(id);
+    if (L.color && Array.isArray(it[L.color])) it[L.color].push(itemColor(L, it) ?? (B.pal[B.layer] || {}).color ?? 0);
+    return;
+  }
   const arr = items(lv, L), i = arr.findIndex(p => p.x === c.x && p.y === c.y);
   if (B.paint === "remove" && i >= 0) arr.splice(i, 1);
   else if (B.paint === "add" && i < 0 && !(L.solid && occupancy(lv, true).has(ck(c.x, c.y)))) { const ref = LREF(L); arr.push({ ...(ref ? makeObj(ref) : {}), x: c.x, y: c.y }); }
@@ -1504,7 +1621,7 @@ function inspector(lv) {
   head.append(el("span", { style: { marginLeft: "auto" } }), el("button", { class: "small danger", text: "Xóa", onclick: () => { removeObj(lv, B.sel); B.sel = null; changed(true); } }));
   box.append(head);
   const cells = itemCells(L, it);
-  box.append(el("div", { class: "hint", text: L.mode === "path" ? `${cells.length} ô · đầu (${cells[0]?.x},${cells[0]?.y}) → cuối (${cells[cells.length - 1]?.x},${cells[cells.length - 1]?.y})` : `Ô: ${cells.map(c => `(${c.x},${c.y})`).join(" ")}` }));
+  box.append(el("div", { class: "hint", text: L.mode === "path" ? `${cells.length} ô · đầu (${cells[0]?.x},${cells[0]?.y}) → cuối (${cells[cells.length - 1]?.x},${cells[cells.length - 1]?.y})` : `${cells.length} ô: ${cells.slice(0, 40).map(c => `(${c.x},${c.y})`).join(" ")}${cells.length > 40 ? " …" : ""}` }));
   if (L.color) {
     const cd = colorDesc(L), whole = descAt(ref, L.color), values = cd.k === "enum" ? enm(cd.ref).members.map(m => m[0]) : Array.from({ length: B.colors }, (_, i) => i);
     const row = el("div", { class: "toolbar-row" }, el("span", { class: "hint", text: whole.k === "list" ? "Màu cả object:" : "Màu:" }));
@@ -1595,6 +1712,8 @@ function profilePanel(lv) {
   panel.append(el("div", { class: "setup-grid" },
     row("Chiều rộng (width)", sel(PR.grid.width, ints, v => { PR.grid.width = v; })),
     row("Chiều cao (height)", sel(PR.grid.height, ints, v => { PR.grid.height = v; })),
+    PR.layers.some(l => ID_MODES.includes(l.mode)) ? row("Thứ tự chỉ số ô", sel(PR.grid.order || "row",
+      [["row", "Theo hàng: id = y·W + x"], ["column", "Theo cột: id = x·H + y"]], v => { PR.grid.order = v; }, null)) : null,
     row("Luật chơi", sel(PR.rules, Object.entries(RULES), v => { PR.rules = v || "none"; }, null)),
     row("Cơ chế cấp level", sel(PR.levelMechanics ? PR.levelMechanics.field : "", fieldNames(ROOT, t => !!mechanicSpecOfList(t)), v => { PR.levelMechanics = v ? mechanicSpecFor(ROOT, v) : null; }))));
   PR.layers.forEach((L, li) => {
@@ -1609,7 +1728,7 @@ function profilePanel(lv) {
       el("button", { class: "small ghost danger", text: "✕", onclick: () => { PR.layers.splice(li, 1); commit(); } })));
     const g = el("div", { class: "setup-grid" },
       row("List trong LevelData", sel(L.list, lists, v => { L.list = v; }, null)),
-      row("Cách chiếm ô", sel(L.mode, Object.entries(LAYER_MODES), v => { L.mode = v; L.solid = !["flat", "matrix"].includes(v); }, null)),
+      row("Cách chiếm ô", sel(L.mode, Object.entries(LAYER_MODES), v => { L.mode = v; L.solid = !["flat", "matrix", ...ID_MODES].includes(v); }, null)),
       row("Hình vẽ", sel(L.draw, Object.entries(LAYER_DRAWS), v => { L.draw = v; }, null)),
       row("Chặn ô (không chồng)", el("input", { type: "checkbox", checked: !!L.solid, onchange: e => { L.solid = e.target.checked; commit(); } })));
     if (L.mode === "point" || L.mode === "shape") {
@@ -1618,6 +1737,7 @@ function profilePanel(lv) {
     }
     if (L.mode === "shape") g.append(row("Các ô của khối (offset)", sel(L.shape, coordLists, v => { L.shape = v; })));
     if (L.mode === "path") g.append(row("Chuỗi ô (đầu → cuối)", sel(L.path, coordLists, v => { L.path = v; })));
+    if (L.mode === "ids") g.append(row("Chỉ số ô int[] (y·W + x)", sel(L.ids, fieldNames(ref, t => t.k === "list" && t.of.k === "int"), v => { L.ids = v; })));
     if (L.mode === "flat" || L.mode === "matrix") { const d = descAt(ROOT, L.list), inner = d && (L.mode === "flat" ? d.of : d.of && d.of.of); if (inner && inner.k === "obj") g.append(row("Field giá trị", sel(L.value, fieldNames(inner.ref, t => isScalar(t)), v => { L.value = v; }))); }
     if (ref && L.mode !== "flat" && L.mode !== "matrix") g.append(
       row("Màu", sel(L.color, colorish, v => { L.color = v; })),
@@ -1645,6 +1765,174 @@ function mechanicSpecFor(ref, field) {
   const text = x => x.type.k === "string" || x.type.k === "raw";
   const inner = cls(f.type.of.ref).fields, kind = inner.find(x => x.type.k === "enum"), payload = inner.find(x => text(x) && /payload|json|data|param/i.test(x.json)) || inner.find(text);
   return kind && payload ? { field, kind: kind.json, payload: payload.json, enum: kind.type.ref, text: payload.type.k === "string" } : null;
+}
+
+/* ---------- gameplay inferred from the APK (D.game_rules) ----------
+   color_count_balance: units (guns…) with a colour and a count must, per colour, add up to the coloured
+   cells on the board plus the cells queued by sources (pipes…). Verified by DucAPK on the extracted levels. */
+const GR = (D.game_rules || []).find(r => r.kind === "color_count_balance") || null;
+const COLOR_FAMILIES = { yellow: [48, 92, 56], orange: [28, 92, 55], red: [2, 76, 54], green: [130, 52, 45], blue: [214, 80, 56], pink: [330, 82, 68],
+  purple: [275, 58, 55], violet: [265, 60, 60], brown: [22, 45, 36], white: [220, 20, 94], black: [270, 18, 20], gray: [220, 8, 58], grey: [220, 8, 58],
+  begie: [38, 52, 78], beige: [38, 52, 78], teal: [174, 70, 40], cyan: [188, 80, 50], magenta: [300, 70, 55], lime: [85, 70, 50] };
+const SHADE_SHIFT = [0, -12, 10, -22, 18, -30, 24];
+const colorName = v => { const m = D.color_enum && D.color_enum.members.find(x => x[0] === v); return m ? m[1] : String(v); };
+/* colour from the game's colour enum name (Pink_2 → pink, 2nd shade); RGB itself is not in the APK */
+function gameColor(v) {
+  const name = colorName(v), m = /^([a-z]+)[_\s-]*(\d*)/i.exec(name), fam = m && COLOR_FAMILIES[m[1].toLowerCase()];
+  if (!fam) return PALETTE[((v % PALETTE.length) + PALETTE.length) % PALETTE.length];
+  const shade = Math.max(1, +m[2] || 1), l = Math.max(8, Math.min(97, fam[2] + SHADE_SHIFT[(shade - 1) % SHADE_SHIFT.length]));
+  return `hsl(${fam[0]} ${fam[1]}% ${l}%)`;
+}
+const walkPath = (v, p) => !p.length ? [v] : p[0] === "*" ? (Array.isArray(v) ? v.flatMap(x => walkPath(x, p.slice(1))) : [])
+  : (v && typeof v === "object" ? walkPath(v[p[0]], p.slice(1)) : []);
+const grUnits = lv => GR.unit_paths.flatMap(p => walkPath(lv, p)).filter(u => u && typeof u === "object");
+function grBalance(lv) {
+  const pix = new Map(), src = new Map(), bul = new Map(), add = (m, k, n) => m.set(k, (m.get(k) || 0) + n);
+  for (const g of getP(lv, GR.cells.list) || []) if (g) add(pix, g[GR.cells.color], (g[GR.cells.ids] || []).length);
+  for (const s of GR.sources || []) for (const it of getP(lv, s.list) || []) for (const c of (it && it[s.colors]) || []) add(src, c, 1);
+  for (const u of grUnits(lv)) add(bul, u[GR.unit.color], +u[GR.unit.count] || 0);
+  return [...new Set([...pix.keys(), ...src.keys(), ...bul.keys()])].sort((a, b) => a - b)
+    .map(c => ({ c, pix: pix.get(c) || 0, src: src.get(c) || 0, bul: bul.get(c) || 0, diff: (bul.get(c) || 0) - (pix.get(c) || 0) - (src.get(c) || 0) }));
+}
+let typicalCountCache = null;
+function typicalCount() {
+  if (typicalCountCache == null) {
+    const all = D.samples.slice(0, 300).flatMap(s => grUnits(s.data).map(u => +u[GR.unit.count] || 0)).filter(n => n > 0).sort((a, b) => a - b);
+    typicalCountCache = all.length ? all[all.length >> 1] : 20;
+  }
+  return typicalCountCache;
+}
+const grColumns = lv => GR.columns ? (Array.isArray(getP(lv, GR.columns.list)) ? getP(lv, GR.columns.list) : (setP(lv, GR.columns.list, []), getP(lv, GR.columns.list))) : [];
+const colRef = () => descAt(ROOT, GR.columns.list).of.ref;
+function newUnit(color, count) { const u = makeObj(GR.unit.class); u[GR.unit.color] = color; u[GR.unit.count] = count; return u; }
+function dropEmptyUnits(lv) {
+  for (const p of GR.unit_paths) for (const arr of walkPath(lv, p.slice(0, -1)))
+    if (Array.isArray(arr)) arr.splice(0, arr.length, ...arr.filter(u => !(u && typeof u === "object" && (+u[GR.unit.count] || 0) <= 0)));
+}
+/* make every colour balance: top up the last unit of a colour or trim units from the end */
+function fixBalance(lv) {
+  const cols = grColumns(lv);
+  for (const r of grBalance(lv)) {
+    let d = -r.diff; if (!d) continue;
+    const units = grUnits(lv).filter(u => u[GR.unit.color] === r.c);
+    if (d > 0) {
+      if (units.length) units[units.length - 1][GR.unit.count] += d;
+      else if (GR.columns) { if (!cols.length) cols.push(makeObj(colRef())); const col = cols.reduce((a, b) => ((a[GR.columns.units] || []).length <= (b[GR.columns.units] || []).length ? a : b)); (col[GR.columns.units] ||= []).push(newUnit(r.c, d)); }
+    } else for (let i = units.length - 1; i >= 0 && d < 0; i--) { const take = Math.min(+units[i][GR.unit.count] || 0, -d); units[i][GR.unit.count] -= take; d += take; }
+  }
+  dropEmptyUnits(lv); B.gun = null; changed(true); toast("Đã cân bằng số lượng theo màu.");
+}
+function seededRandom(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+/* build the columns from the picture: split each colour into units of about `size`, shuffle, deal round-robin */
+function generateUnits(lv) {
+  const cols0 = grColumns(lv);
+  const nCols = +prompt("Số cột:", Math.max(1, cols0.length || 3)); if (!(nCols > 0)) return;
+  const size = +prompt(`Số ${GR.unit.count} mỗi ${GR.unit.name} (khoảng):`, typicalCount()); if (!(size > 0)) return;
+  const hiddenPct = GR.unit.hidden ? +prompt(`Tỉ lệ ${GR.unit.name} ẩn "?" (%):`, 0) || 0 : 0;
+  const keep = new Map();
+  if (GR.spawners) for (const col of cols0) for (const s of col[GR.spawners.field] || []) for (const u of s[GR.spawners.units] || []) keep.set(u[GR.unit.color], (keep.get(u[GR.unit.color]) || 0) + (+u[GR.unit.count] || 0));
+  const units = [];
+  for (const r of grBalance(lv)) {
+    const need = r.pix + r.src - (keep.get(r.c) || 0); if (need <= 0) continue;
+    const n = Math.max(1, Math.round(need / size));
+    for (let i = 0; i < n; i++) units.push(newUnit(r.c, Math.floor(need / n) + (i < need % n ? 1 : 0)));
+  }
+  const rnd = seededRandom(S.cur * 7919 + units.length);
+  for (let i = units.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [units[i], units[j]] = [units[j], units[i]]; }
+  if (GR.unit.hidden) units.forEach((u, k) => { if (k >= nCols && rnd() * 100 < hiddenPct) u[GR.unit.hidden] = true; });
+  const cols = Array.from({ length: nCols }, (_, i) => cols0[i] || makeObj(colRef()));
+  cols.forEach(c => { c[GR.columns.units] = []; });
+  units.forEach((u, k) => cols[k % nCols][GR.columns.units].push(u));
+  setP(lv, GR.columns.list, cols); B.gun = null; changed(true);
+  toast(`Đã sinh ${units.length} ${GR.unit.name} trong ${nCols} cột từ bức tranh.`);
+}
+function unitBadges(u) {
+  const out = [];
+  for (const f of cls(GR.unit.class).fields) {
+    if ([GR.unit.color, GR.unit.count, GR.unit.hidden].includes(f.json)) continue;
+    const v = u[f.json];
+    if (f.type.k === "bool" && v) out.push(f.json.replace(/^Is/, "").slice(0, 6));
+    else if (f.type.k === "enum" && v) out.push(enumLabel(f.type, v).slice(0, 7));
+    else if (f.type.k === "int" && v && !/id$/i.test(f.json)) out.push(`${f.json.replace(/Hp$/, "").slice(0, 4)} ${v}`);
+  }
+  return out;
+}
+function unitCard(u, selected, onclick) {
+  const card = el("div", { class: "gcard" + (selected ? " sel" : "") + (GR.unit.hidden && u[GR.unit.hidden] ? " hidden-unit" : ""),
+    title: `${colorName(u[GR.unit.color])} · ${GR.unit.count} ${u[GR.unit.count]}`, onclick, style: { background: gameColor(u[GR.unit.color]) } }, String(u[GR.unit.count] ?? ""));
+  const light = /(\d+)%\)$/.exec(gameColor(u[GR.unit.color]));
+  if (light && +light[1] > 78) Object.assign(card.style, { color: "#1F2937", textShadow: "none" });
+  const badges = unitBadges(u);
+  if (badges.length) card.append(el("div", { class: "badges" }, badges.map(b => el("span", { text: b }))));
+  return card;
+}
+function gunPanel(lv) {
+  const box = el("div", { class: "gunpanel" }), ev = GR.evidence;
+  box.append(el("div", { class: "list-head" }, el("strong", { text: `🎯 ${GR.unit.name} & cân bằng màu` }),
+    el("span", { class: "hint", text: ` Luật suy từ game: tổng ${GR.unit.name}.${GR.unit.count} mỗi màu = số ô ${GR.cells.list}` +
+      (GR.sources && GR.sources.length ? ` + khối trong ${GR.sources.map(s => s.list + "." + s.colors).join(", ")}` : "") + ` (đúng ở ${ev.matched}/${ev.checked} level của game).` })));
+  const rows = grBalance(lv), table = el("table", {}, el("tr", {}, ["Màu", "Pixel", ...(GR.sources && GR.sources.length ? ["Ống/nguồn"] : []), GR.unit.count, "Chênh"].map(t => el("th", { text: t }))));
+  for (const r of rows) table.append(el("tr", { class: "pick" + (r.diff ? " bad" : ""), title: "Bấm để chọn màu này khi tô bàn chơi", onclick: () => { const li = PR.layers.findIndex(l => l.list === GR.cells.list); if (li >= 0) { B.layer = li; B.tool = "add"; (B.pal[li] ||= {}).color = r.c; renderAll(); } } },
+    el("td", {}, el("span", { class: "swatch", style: { display: "inline-flex" } }, el("i", { style: { background: gameColor(r.c) } }), `${r.c} ${colorName(r.c)}`)),
+    el("td", { text: r.pix }), ...(GR.sources && GR.sources.length ? [el("td", { text: r.src })] : []), el("td", { text: r.bul }),
+    el("td", { text: r.diff ? (r.diff > 0 ? "+" : "") + r.diff : "✓" })));
+  const bad = rows.filter(r => r.diff).length;
+  box.append(table, el("div", { class: bad ? "warnbox" : "okbox", text: bad ? `${bad} màu chưa cân bằng — level sẽ không thể hoàn thành.` : "Mọi màu đã cân bằng." }));
+  box.append(el("div", { class: "toolbar-row" },
+    GR.columns ? el("button", { class: "small primary", text: `⚙ Tự sinh ${GR.unit.name} từ bức tranh`, onclick: () => generateUnits(lv) }) : null,
+    el("button", { class: "small", text: "⚖ Cân bằng tự động", disabled: !bad, onclick: () => fixBalance(lv) }),
+    GR.columns ? el("button", { class: "small", text: "＋ Cột", onclick: () => { grColumns(lv).push(makeObj(colRef())); changed(true); } }) : null));
+  if (GR.columns) box.prepend(unitInspector(lv, grColumns(lv)));
+  return box;
+}
+/* the unit columns drawn right under the board, as the game lays them out */
+function gunColumns(lv) {
+  const rows = grBalance(lv), cols = grColumns(lv), wrap = el("div", { class: "gcols" });
+  cols.forEach((col, ci) => {
+    const list = Array.isArray(col[GR.columns.units]) ? col[GR.columns.units] : (col[GR.columns.units] = []);
+    const c = el("div", { class: "gcol" }, el("div", { class: "gcol-h" }, `Cột ${ci + 1}`,
+      el("button", { class: "small ghost danger", text: "✕", title: "Xóa cột", onclick: () => { if (confirm(`Xóa cột ${ci + 1}?`)) { cols.splice(ci, 1); B.gun = null; changed(true); } } })));
+    list.forEach((u, k) => c.append(unitCard(u, B.gun && B.gun.ci === ci && B.gun.k === k && B.gun.sp == null, () => { B.gun = { ci, k }; showTab("params"); renderAll(); })));
+    if (GR.spawners) (col[GR.spawners.field] || []).forEach((s, si) => {
+      const inner = s[GR.spawners.units] || [];
+      c.append(el("div", { class: "gcard spawner" + (B.gun && B.gun.ci === ci && B.gun.sp === si ? " sel" : ""), title: `${GR.spawners.field} #${si}: ${inner.length} ${GR.unit.name}`,
+        onclick: () => { B.gun = { ci, sp: si }; showTab("params"); renderAll(); } }, `⇣${inner.length}`));
+    });
+    c.append(el("div", { class: "gcard add", title: `Thêm ${GR.unit.name}`, onclick: () => {
+      const need = rows.find(r => r.diff < 0), st = B.pal[PR.layers.findIndex(l => l.list === GR.cells.list)] || {};
+      list.push(newUnit(need ? need.c : st.color ?? rows[0]?.c ?? 0, need ? Math.min(-need.diff, typicalCount()) : typicalCount()));
+      B.gun = { ci, k: list.length - 1 }; showTab("params"); changed(true); } }, "＋"));
+    wrap.append(c);
+  });
+  wrap.append(el("div", { class: "gcol" }, el("div", { class: "gcol-h", text: " " }),
+    el("div", { class: "gcard add", title: "Thêm cột", onclick: () => { cols.push(makeObj(colRef())); changed(true); } }, "＋▥")));
+  return el("div", { class: "gstage-units" }, el("div", { class: "hint", text: `${GR.columns.list}: hàng trên cùng của mỗi cột được lấy ra trước` }), wrap);
+}
+function unitInspector(lv, cols) {
+  const g = B.gun, col = g && cols[g.ci]; if (!col) return el("div", { class: "hint", text: `Bấm một ${GR.unit.name} để sửa.` });
+  const box = el("div", { class: "inspector" });
+  if (g.sp != null) {
+    const s = (col[GR.spawners.field] || [])[g.sp]; if (!s) return box;
+    const ref = descAt(colRef(), GR.spawners.field).of.ref;
+    box.append(el("strong", { text: `Cột ${g.ci + 1} · ${GR.spawners.field} #${g.sp}` }), objEditor({ k: "obj", ref }, () => s, () => {}, `$.${GR.columns.list}[${g.ci}].${GR.spawners.field}[${g.sp}]`, { top: true }));
+    box.addEventListener("change", () => setTimeout(renderAll, 0));
+    return box;
+  }
+  const list = col[GR.columns.units], u = list[g.k]; if (!u) return box;
+  const move = (ci, k) => { list.splice(g.k, 1); const dst = cols[ci][GR.columns.units] ||= []; k = Math.max(0, Math.min(k, dst.length)); dst.splice(k, 0, u); B.gun = { ci, k }; changed(true); };
+  box.append(el("div", { class: "list-head" }, el("strong", { text: `Cột ${g.ci + 1} · ${GR.unit.name} #${g.k + 1}` }),
+    el("button", { class: "small", text: "↑", disabled: g.k === 0, onclick: () => move(g.ci, g.k - 1) }),
+    el("button", { class: "small", text: "↓", disabled: g.k === list.length - 1, onclick: () => move(g.ci, g.k + 1) }),
+    el("button", { class: "small", text: "←", disabled: g.ci === 0, onclick: () => move(g.ci - 1, g.k) }),
+    el("button", { class: "small", text: "→", disabled: g.ci === cols.length - 1, onclick: () => move(g.ci + 1, g.k) }),
+    el("button", { class: "small", text: "Nhân bản", onclick: () => { list.splice(g.k + 1, 0, clone(u)); B.gun = { ci: g.ci, k: g.k + 1 }; changed(true); } }),
+    el("span", { style: { marginLeft: "auto" } }),
+    el("button", { class: "small danger", text: "Xóa", onclick: () => { list.splice(g.k, 1); B.gun = null; changed(true); } })));
+  const colors = grBalance(lv).map(r => r.c), sw = el("div", { class: "toolbar-row" }, el("span", { class: "hint", text: "Màu:" }));
+  for (const c of colors) sw.append(el("span", { class: "swatch" + (u[GR.unit.color] === c ? " on" : ""), onclick: () => { u[GR.unit.color] = c; changed(true); } }, el("i", { style: { background: gameColor(c) } }), colorName(c)));
+  box.append(sw, objEditor({ k: "obj", ref: GR.unit.class }, () => u, () => {}, `$.${GR.columns.list}[${g.ci}].${GR.columns.units}[${g.k}]`, { top: true }));
+  box.addEventListener("change", () => setTimeout(renderAll, 0));
+  return box;
 }
 
 /* ---------- render all ---------- */
@@ -1786,10 +2074,7 @@ function boot() {
     if (pristine) { S.levels.shift(); S.cur = Math.max(0, S.cur - 1); }
     changed(true); toast(`Đã nhập ${list.length} level: khớp ${total.matched} trường, thiếu ${total.missing}, bỏ ${total.ignored} khóa lạ.`);
   };
-  document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
-    document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
-    document.querySelectorAll(".tab-body").forEach(x => x.classList.toggle("on", x.id === "tab-" + b.dataset.tab));
-  });
+  document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
   document.addEventListener("keydown", e => {
     if (!(e.ctrlKey || e.metaKey) || ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName) && document.activeElement.type !== "checkbox") return;
     if (e.key.toLowerCase() === "z" && !e.shiftKey) { e.preventDefault(); undo(); }

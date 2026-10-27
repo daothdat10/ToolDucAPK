@@ -113,9 +113,15 @@ class NativeTests(unittest.TestCase):
                 state = json.loads((job / "job.json").read_text())
                 self.assertEqual(state["backend"], "Ghidra Native")
                 self.assertEqual(state["status"], "partial")
+                # Function discovery and decompilation are separate Ghidra runs.
+                self.assertEqual(len(calls), 2)
+                self.assertIn("-import", calls[0])
+                self.assertEqual(calls[0][-2:], ["false", ""])
+                self.assertIn("-process", calls[1])
+                self.assertEqual(calls[1][-1], "true")
                 report = retry_failed_only(job, lambda _: None, threading.Event())
                 self.assertEqual(report["functions_with_body"], 1)
-                self.assertEqual(len(calls), 2)
+                self.assertEqual(len(calls), 4)
                 jadx.assert_not_called()
 
     def test_cancel_keeps_native_results_and_status(self):
@@ -140,3 +146,55 @@ class NativeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _elf_with_eh_frame(functions):
+    """A minimal little-endian ELF64 with PT_LOAD + PT_GNU_EH_FRAME and one FDE per
+    (address, size), the layout clang/lld emit for Android libraries."""
+    import struct
+    header_size, phdr_size = 64, 56
+    hdr_at = header_size + 2 * phdr_size
+    count = len(functions)
+    eh_hdr_len = 12 + 8 * count
+    frame_at = hdr_at + eh_hdr_len
+    cie = struct.pack("<II", 0, 0) + bytes([1]) + b"zR\0" + bytes([1, 0x78, 30, 1, 0x1B])
+    cie = cie + b"\0" * (-(len(cie) - 4) % 4)
+    cie = struct.pack("<I", len(cie) - 4) + cie[4:]
+    frame, fde_offsets = bytearray(cie), []
+    for address, size in functions:
+        start = frame_at + len(frame)
+        fde_offsets.append(start)
+        body = struct.pack("<I", start + 4 - frame_at)
+        body += struct.pack("<i", address - (start + 8)) + struct.pack("<i", size) + bytes([0])
+        body += b"\0" * (-len(body) % 4)
+        frame += struct.pack("<I", len(body)) + body
+    eh_hdr = bytes([1, 0x1B, 0x03, 0x3B]) + struct.pack("<i", frame_at - (hdr_at + 4))
+    eh_hdr += struct.pack("<I", count)
+    for (address, _), fde in sorted(zip(functions, fde_offsets)):
+        eh_hdr += struct.pack("<ii", address - hdr_at, fde - hdr_at)
+    total = frame_at + len(frame) + 0x400
+    elf = bytearray(b"\x7fELF" + bytes([2, 1, 1]) + b"\0" * 9)
+    elf += struct.pack("<HHIQQQIHHHHHH", 3, 183, 1, 0, header_size, 0, 0, header_size, phdr_size, 2, 64, 0, 0)
+    elf += struct.pack("<IIQQQQQQ", 1, 5, 0, 0, 0, total, total, 0x1000)
+    elf += struct.pack("<IIQQQQQQ", 0x6474E550, 4, hdr_at, hdr_at, hdr_at, eh_hdr_len, eh_hdr_len, 4)
+    elf += eh_hdr + frame
+    return bytes(elf + b"\0" * (total - len(elf)))
+
+
+class EhFrameTests(unittest.TestCase):
+    def test_function_starts_and_sizes_from_eh_frame(self):
+        from ducapk.native import eh_frame_functions
+        with tempfile.TemporaryDirectory() as temp:
+            binary = Path(temp) / "libgame.so"
+            binary.write_bytes(_elf_with_eh_frame([(0x500, 0x40), (0x400, 0x20), (0x540, 0x8)]))
+            self.assertEqual(eh_frame_functions(binary), [(0x400, 0x20), (0x500, 0x40), (0x540, 0x8)])
+            binary.write_bytes(b"\x7fELFdata")
+            self.assertEqual(eh_frame_functions(binary), [])
+
+    def test_sdk_libraries_are_not_game_code(self):
+        from ducapk.native import library_category
+        for name in ("libfmod.so", "libsentry-android.so", "libFirebaseCppApp-13_17_0.so",
+                     "libapplovin-native-crash-reporter.so", "libunity.so", "libmain.so"):
+            self.assertEqual(library_category(name), "sdk", name)
+        for name in ("libgame.so", "libcocos2dcpp.so", "libUE4.so"):
+            self.assertEqual(library_category(name), "game", name)

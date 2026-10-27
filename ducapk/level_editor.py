@@ -23,8 +23,8 @@ from .categories import category_for_class
 
 TEMPLATE = Path(__file__).with_name("level_editor_template.html")
 DATA_PLACEHOLDER = "/*__DUCAPK_DATA__*/null"
-MAX_SAMPLE_LEVELS = 400
-MAX_SAMPLE_BYTES = 12 * 1024 * 1024
+MAX_SAMPLE_LEVELS = 5000
+MAX_SAMPLE_BYTES = 40 * 1024 * 1024
 MAX_MECHANIC_ENUMS = 80
 MAX_APK_LEVEL_CLASSES = 40
 
@@ -532,6 +532,10 @@ class TypeLibrary:
             self._load_block(block_id)
         return [self.types[key] for key in self.by_short.get(short, [])]
 
+    def blocks_matching(self, pattern: re.Pattern) -> list[int]:
+        return [index for index, block in enumerate(self._blocks)
+                if pattern.search(block["text"], block["start"], block["end"])]
+
     def enum_blocks(self) -> list[int]:
         return [index for index, block in enumerate(self._blocks) if block["kind"] == "enum"]
 
@@ -543,6 +547,21 @@ class TypeLibrary:
     def class_block_names(self, pattern: re.Pattern) -> list[str]:
         return sorted({block["names"][0].split(".")[-1] for block in self._blocks
                        if block["kind"] in {"class", "struct"} and pattern.search(block["names"][0])})
+
+    def class_names_with_fields(self, fields: set[str], minimum: int) -> list[str]:
+        """Class/struct names whose declaration text mentions at least `minimum` of `fields`."""
+        patterns = [re.compile(rf"\b{re.escape(field)}\s*[;{{=]") for field in fields]
+        names = set()
+        for block in self._blocks:
+            if block["kind"] not in {"class", "struct"}:
+                continue
+            text = block["text"][block["start"]:block["end"]]
+            if sum(1 for pattern in patterns if pattern.search(text)) >= minimum:
+                names.update(name.split(".")[-1] for name in block["names"])
+        names.update(item["name"] for item in self.types.values()
+                     if item["kind"] in {"class", "struct"}
+                     and len(fields & {f["name"] for f in item["fields"]}) >= minimum)
+        return sorted(names)
 
     def block_texts(self, short: str) -> list[str]:
         """Raw declaration text (including method signatures) of types named `short`."""
@@ -1063,17 +1082,23 @@ def _sample_levels(job: Path | None, emit) -> list[dict[str, Any]]:
         pass
     if not files and (job / "levels").is_dir():
         files = [(path.parent.name, path) for path in sorted((job / "levels").rglob("*.json"))]
+    def natural(entry: tuple[str, Path]) -> list:
+        return [int(part) if part.isdigit() else part.lower()
+                for part in re.split(r"(\d+)", f"{entry[0]}/{entry[1].stem}")]
+
+    files.sort(key=natural)
     samples, total = [], 0
     for group, path in files:
         if len(samples) >= MAX_SAMPLE_LEVELS:
             break
         try:
-            size = path.stat().st_size
-            if total + size > MAX_SAMPLE_BYTES:
-                break
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
+        # Levels are embedded compactly, so budget the compact size rather than the indented file.
+        size = len(json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        if total + size > MAX_SAMPLE_BYTES:
+            break
         total += size
         samples.append({"name": path.stem, "group": group,
                         "file": path.relative_to(job).as_posix() if path.is_relative_to(job) else path.name,
@@ -1141,7 +1166,8 @@ def _cs_type(description: dict[str, Any], builder: "SchemaBuilder") -> str:
     return text + "?" if description.get("nullable") and kind in {"int", "float", "bool", "enum", "char"} else text
 
 
-def render_leveldata_cs(builder: "SchemaBuilder", root_key: str, source: str) -> str:
+def render_leveldata_cs(builder: "SchemaBuilder", root_key: str, source: str,
+                        namespace: str = "LevelEditorData", header: str | None = None) -> str:
     """C# for the level root and every class/enum it reaches, ready to drop into a Unity project."""
     body: list[str] = []
     for key in [root_key] + sorted(k for k in builder.classes if k != root_key):
@@ -1152,6 +1178,8 @@ def render_leveldata_cs(builder: "SchemaBuilder", root_key: str, source: str) ->
         body += [f"    // {item['ns'] + '.' if item['ns'] else ''}{item['name']}",
                  "    [Serializable]", f"    public {kind} {item['name']}", "    {"]
         for field in item["fields"]:
+            if field.get("comment"):
+                body.append(f"        // {field['comment']}")
             if field["json"] != field["name"]:
                 body.append(f'        [JsonProperty("{field["json"]}")]')
             body.append(f"        public {_cs_type(field['type'], builder)} {field['name']};")
@@ -1173,10 +1201,11 @@ def render_leveldata_cs(builder: "SchemaBuilder", root_key: str, source: str) ->
         usings.append("using Newtonsoft.Json;")
     if re.search(r"\bJ(Object|Token|Array)\b", text):
         usings.append("using Newtonsoft.Json.Linq;")
-    header = (f"// Sinh tự động bởi DucAPK từ metadata của {source}.\n"
-              "// Chỉ gồm field được serialize; tên kiểu giữ như trong game, gộp vào namespace LevelEditorData.\n"
-              "// Kiểm tra và chỉnh trước khi dùng trong project của bạn.\n")
-    return header + "\n".join(usings) + "\n\nnamespace LevelEditorData\n{\n" + text + "\n}\n"
+    if header is None:
+        header = (f"// Sinh tự động bởi DucAPK từ metadata của {source}.\n"
+                  f"// Chỉ gồm field được serialize; tên kiểu giữ như trong game, gộp vào namespace {namespace}.\n"
+                  "// Kiểm tra và chỉnh trước khi dùng trong project của bạn.\n")
+    return header + "\n".join(usings) + f"\n\nnamespace {namespace}\n{{\n" + text + "\n}\n"
 
 
 def infer_leveldata(job: Path, root: str | None, emit, cancel: threading.Event | None = None) -> Path:
@@ -1300,6 +1329,16 @@ def build_level_editor(leveldata: Path | None, output_html: Path, job: Path | No
     mechanic_keys = _mechanic_enums(builder, apk, focus) if apk.indexed else []
     level_classes = _apk_level_classes(apk) if apk.indexed else []
     samples = _sample_levels(job, emit)
+    from .game_rules import detect_game_rules, find_color_enum
+    game_rules = detect_game_rules(builder.classes, root_key,
+                                   [s["data"] for s in samples if isinstance(s["data"], dict)])
+    for rule in game_rules:
+        evidence = rule["evidence"]
+        emit(f"Luật game {rule['kind']}: tổng {rule['unit']['name']}.{rule['unit']['count']} theo màu = số ô "
+             f"{rule['cells']['list']} — đúng ở {evidence['matched']:,}/{evidence['checked']:,} level.")
+    color_enum = find_color_enum(apk) if apk.indexed else None
+    if color_enum:
+        emit(f"Bảng màu của game: enum {color_enum['name']} ({len(color_enum['members'])} màu).")
     mechanic_catalogs = {key: _mechanic_catalog(builder, apk, key) for key in _mechanic_kind_enums(builder)}
     for key, catalog in mechanic_catalogs.items():
         mapped = sum(1 for entry in catalog if "payload" in entry)
@@ -1338,6 +1377,8 @@ def build_level_editor(leveldata: Path | None, output_html: Path, job: Path | No
         "unresolved": [{"type": name, "used_by": sorted(set(where))[:6]}
                        for name, where in sorted(builder.unresolved.items())],
         "samples": samples,
+        "game_rules": game_rules,
+        "color_enum": color_enum,
         "mechanic_catalogs": mechanic_catalogs,
         "saved_profile": saved_profile,
         "profile_file": str(profile_path),

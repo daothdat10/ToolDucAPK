@@ -375,7 +375,7 @@ def _process(command: list[str], cwd: Path, env: dict[str, str],
                 continue
             log.write(line)
             if any(word in line for word in ("DUCAPK_PROGRESS", "DUCAPK_CURRENT",
-                                             "DUCAPK_BATCH_DONE")):
+                                             "DUCAPK_BATCH_DONE", "DUCAPK_PREPARE", "Native functions")):
                 emit(line.strip())
                 if "DUCAPK_PROGRESS " in line:
                     _report_eta(line, emit)
@@ -463,6 +463,15 @@ def _detect_unity_version(job: Path) -> str | None:
         except Exception:
             continue
     return None
+
+
+def _write_level_model(job: Path, emit, cancel: threading.Event) -> None:
+    """LevelModel.cs beside levels.json; a failure here never stops the analysis."""
+    try:
+        from .level_model import write_level_model
+        write_level_model(job, emit, cancel)
+    except Exception as model_error:
+        emit(f"Không viết được LevelModel.cs: {model_error}")
 
 
 def _run_cpp2il(job: Path, emit, cancel: threading.Event,
@@ -1002,7 +1011,7 @@ def _collect_results(job: Path, emit) -> dict:
 
 def _analyze_native(inputs, job, emit, cancel, with_ghidra, max_methods,
                     include_categories, decompile_java):
-    from .native import discover_native_libraries, collect_native_results
+    from .native import collect_native_results, discover_native_libraries, eh_frame_functions
     _state(job, backend="Ghidra Native", apk_type="Native C/C++", status="extracting")
     try:
         libraries = discover_native_libraries(_apk_inputs(inputs, job), job,
@@ -1017,21 +1026,43 @@ def _analyze_native(inputs, job, emit, cancel, with_ghidra, max_methods,
         directory = job / "native" / lib["key"]
         binary = job / lib["binary"]
         ready = directory / "analysis_ready"
-        reuse = ready.is_file() and (_project_dir(directory) / "DucAPK.gpr").is_file()
-        arguments = (["-process", binary.name, "-noanalysis"] if reuse else
-                     ["-import", str(binary), "-overwrite"])
-        (directory / "script_complete").unlink(missing_ok=True)
+        script = ["-scriptPath", str(ROOT / "scripts"), "-postScript", "DucAPKNative.java", str(directory)]
         _state(job, status="decompiling", native_library=lib["name"])
-        emit(f"Ghidra Native: {lib['name']} — " +
-             ("tiếp tục các hàm chưa có thân." if reuse else "nhập ELF và Auto Analyze để tìm hàm…"))
-        # Native C++ needs Auto Analyze, unlike metadata-mapped IL2CPP functions.
-        code = _headless(directory, [*arguments, "-max-cpu", str(ghidra_threads),
-                         "-scriptPath", str(ROOT / "scripts"), "-postScript", "DucAPKNative.java",
-                         str(directory), str(max_methods or 0), str(with_ghidra).lower()],
+        if not (ready.is_file() and (_project_dir(directory) / "DucAPK.gpr").is_file()):
+            # Stripped C++ keeps every function start in .eh_frame_hdr for exception unwinding;
+            # creating functions from it replaces hours of global Auto Analyze.
+            starts = eh_frame_functions(binary)
+            starts_file = directory / "function_starts.txt"
+            if starts:
+                starts_file.write_text("".join(f"{start:x} {size:x}\n" for start, size in starts),
+                                       encoding="ascii")
+                emit(f"Ghidra Native: {lib['name']} — {len(starts):,} hàm lấy từ .eh_frame_hdr; "
+                     "nhập ELF, bỏ qua Auto Analyze toàn cục…")
+                arguments = ["-import", str(binary), "-overwrite", "-noanalysis"]
+            else:
+                emit(f"Ghidra Native: {lib['name']} — không có .eh_frame_hdr; nhập ELF và Auto Analyze "
+                     "để tìm hàm (có thể mất nhiều giờ với thư viện lớn)…")
+                arguments = ["-import", str(binary), "-overwrite", "-max-cpu", str(ghidra_threads)]
+            (directory / "script_complete").unlink(missing_ok=True)
+            code = _headless(directory, [*arguments, *script, "0", "false",
+                                         str(starts_file) if starts else ""],
+                             directory / "ghidra_native_import.log", emit, cancel)
+            if code != 0 or not (directory / "methods.tsv").is_file() or not (directory / "script_complete").is_file():
+                raise RuntimeError(f"Ghidra chưa tìm xong hàm của {lib['name']}; "
+                                   f"xem {directory / 'ghidra_native_import.log'}")
+            ready.touch()
+        if not with_ghidra:
+            collect_native_results(job, emit)
+            continue
+        emit(f"Ghidra Native: {lib['name']} — giải mã song song {ghidra_threads} luồng, "
+             "ưu tiên hàm có tên (export/JNI) trước.")
+        (directory / "script_complete").unlink(missing_ok=True)
+        _reset_eta()
+        code = _headless(directory, ["-process", binary.name, "-noanalysis", *script,
+                                     str(max_methods or 0), "true"],
                          directory / "ghidra_native.log", emit, cancel)
         if code != 0 or not (directory / "methods.tsv").is_file() or not (directory / "script_complete").is_file():
             raise RuntimeError(f"Ghidra chưa xử lý xong {lib['name']}; xem {directory / 'ghidra_native.log'}")
-        ready.touch()
         collect_native_results(job, emit)
     java_partial = False
     if decompile_java:
@@ -1047,12 +1078,28 @@ def _analyze_native(inputs, job, emit, cancel, with_ghidra, max_methods,
     return job
 
 
-def analyze(inputs: list[Path], output_root: Path, emit, cancel: threading.Event,
-            with_ghidra: bool = True, max_methods: int | None = None,
-            resume_job: Path | None = None,
-            include_categories: set[str] | None = None,
-            extract_levels: bool = True, decompile_java: bool = True,
-            decompile_native: bool = False) -> Path:
+def _write_tech_stack(job: Path, emit, cancel: threading.Event) -> None:
+    """tech_stack.json (engine, SDKs, shaders); a failure here never fails the analysis."""
+    try:
+        from .tech_stack import scan_tech_stack
+        scan_tech_stack(job, emit, cancel)
+    except Exception as tech_error:
+        emit(f"Không nhận diện được công nghệ của game: {tech_error}")
+
+
+def analyze(inputs: list[Path], output_root: Path, emit, cancel: threading.Event, **options) -> Path:
+    job = _analyze(inputs, output_root, emit, cancel, **options)
+    if not cancel.is_set():
+        _write_tech_stack(job, _job_logger(job, emit), cancel)
+    return job
+
+
+def _analyze(inputs: list[Path], output_root: Path, emit, cancel: threading.Event,
+             with_ghidra: bool = True, max_methods: int | None = None,
+             resume_job: Path | None = None,
+             include_categories: set[str] | None = None,
+             extract_levels: bool = True, decompile_java: bool = True,
+             decompile_native: bool = False) -> Path:
     output_root.mkdir(parents=True, exist_ok=True)
     if resume_job:
         job = resume_job.resolve()
@@ -1116,6 +1163,7 @@ def analyze(inputs: list[Path], output_root: Path, emit, cancel: threading.Event
                         extract_level_json(_apk_inputs(inputs, job), job, emit, cancel)
                     except LevelScanCancelled as stopped:
                         raise AnalysisCancelled(str(stopped)) from stopped
+                    _write_level_model(job, emit, cancel)
                 if not decompile_java:
                     _state(job, status="levels_only", apk_type="Android DEX (Java/Kotlin)")
                     emit(f"APK không có Unity IL2CPP; bỏ qua JADX theo yêu cầu. Xong: {job}")
@@ -1161,6 +1209,7 @@ def analyze(inputs: list[Path], output_root: Path, emit, cancel: threading.Event
                     annotate_level_mechanics(job, emit)
                 except Exception as annotation_error:
                     emit(f"Không thể gắn tên mechanic vào JSON level: {annotation_error}")
+                _write_level_model(job, emit, cancel)
             if not decompile_java:
                 _state(job, status="partial", native_error=str(native_error))
                 emit(f"Không đọc được metadata IL2CPP: {native_error}. Giữ phần level đã trích.")
@@ -1204,6 +1253,7 @@ def analyze(inputs: list[Path], output_root: Path, emit, cancel: threading.Event
                 annotate_level_field_names(job, emit)
             except Exception as rename_error:
                 emit(f"Không thể đổi tên trường viết tắt trong JSON level: {rename_error}")
+            _write_level_model(job, emit, cancel)
         summary_path = job / "metadata_summary.json"
         summary = (json.loads(summary_path.read_text(encoding="utf-8"))
                    if summary_path.is_file() else build_metadata_index(

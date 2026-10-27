@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 import sqlite3
+import struct
 
 
 def iter_script_methods(script_json: Path):
@@ -194,9 +195,65 @@ def build_metadata_index(script_json: Path, job_dir: Path, emit) -> dict:
     return summary
 
 
+def elf_rva_delta(binary: Path) -> int:
+    """Return what LibCpp2IL subtracts from an ELF virtual address to make its "RVA".
+
+    LibCpp2IL's ElfFile.GetRva is ``va - (.text vaddr - .text offset)`` (falling back
+    to the first executable PT_LOAD), i.e. a file offset. Ghidra and Il2CppDumper
+    address code by virtual address, so this delta must be added back. It is zero
+    for most libil2cpp.so builds, but e.g. 0x4000 when the code segment is aligned
+    to a 16 KiB page.
+    """
+    try:
+        with binary.open("rb") as source:
+            data = source.read(64)
+            if len(data) < 64 or data[:4] != b"\x7fELF":
+                return 0
+            is64 = data[4] == 2
+            endian = "<" if data[5] == 1 else ">"
+            if is64:
+                phoff, shoff = struct.unpack_from(endian + "QQ", data, 0x20)
+                phentsize, phnum, shentsize, shnum, shstrndx = struct.unpack_from(endian + "5H", data, 0x36)
+            else:
+                phoff, shoff = struct.unpack_from(endian + "II", data, 0x1C)
+                phentsize, phnum, shentsize, shnum, shstrndx = struct.unpack_from(endian + "5H", data, 0x2A)
+
+            def section(index: int) -> tuple[int, int, int]:
+                source.seek(shoff + index * shentsize)
+                entry = source.read(shentsize)
+                if is64:
+                    name, _, _, address, offset = struct.unpack_from(endian + "IIQQQ", entry)
+                else:
+                    name, _, _, address, offset = struct.unpack_from(endian + "IIIII", entry)
+                return name, address, offset
+
+            if shoff and shnum and shstrndx < shnum:
+                _, _, names_offset = section(shstrndx)
+                for index in range(shnum):
+                    name, address, offset = section(index)
+                    source.seek(names_offset + name)
+                    if source.read(6) == b".text\x00":
+                        return address - offset
+            for index in range(phnum):
+                source.seek(phoff + index * phentsize)
+                entry = source.read(phentsize)
+                if is64:
+                    kind, flags, offset, address = struct.unpack_from(endian + "IIQQ", entry)
+                else:
+                    kind, offset, address, _, _, _, flags = struct.unpack_from(endian + "7I", entry)
+                if kind == 1 and flags & 1:
+                    return address - offset
+    except (OSError, struct.error):
+        pass
+    return 0
+
+
 def build_cpp2il_metadata_index(method_map: Path, job_dir: Path, emit) -> dict:
     """Build the same browser/index files from Cpp2IL's supported-version RVA map."""
     job_dir.mkdir(parents=True, exist_ok=True)
+    rva_delta = elf_rva_delta(job_dir / "input" / "libil2cpp.so")
+    if rva_delta:
+        emit(f"Cpp2IL ghi RVA theo file offset; cộng 0x{rva_delta:X} để ra địa chỉ ảo cho Ghidra")
     database = job_dir / "methods.sqlite"
     manifest = job_dir / "methods.tsv"
     metadata_dir = job_dir / "classes_metadata"
@@ -231,6 +288,7 @@ def build_cpp2il_metadata_index(method_map: Path, job_dir: Path, emit) -> dict:
             total += 1
             export_index = None
             if address > 0:
+                address += rva_delta
                 mapped += 1
                 export_index = mapped
                 output.write(f"{mapped}\t{address}\t{_b64(class_name)}\t"
@@ -275,7 +333,7 @@ def build_cpp2il_metadata_index(method_map: Path, job_dir: Path, emit) -> dict:
                 current_writer.close()
     connection.close()
     summary = {"methods": total, "mapped_methods": mapped, "classes": classes,
-               "unmapped_methods": total - mapped, "parser": "Cpp2IL"}
+               "unmapped_methods": total - mapped, "parser": "Cpp2IL", "rva_delta": rva_delta}
     (job_dir / "metadata_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     emit(f"Cpp2IL đã nhóm {total:,} phương thức vào {classes:,} class; "

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import gzip
 import hashlib
 import json
 import re
@@ -32,6 +33,10 @@ _CONFIG_AES_KEYS = ((b"dobestadssdatseb", b"0" * 16),)
 # prefix and decrypted by the game's XXTEA variant (BRVf) with this key as
 # UTF-16LE text.
 _MEMORY_BUNDLE_XXTEA_KEY = "WeDoBest"
+# CoreData.LevelDataSerializer.Decrypt (Colony Flow): Base64, undo the in-place
+# Swap(i, (7 * i + 3) % n) shuffle from the last byte down, AES-128-CBC with the
+# GetKey/GetIV string literals as UTF-8, then GZip when the 1f8b magic is present.
+_SWAP_AES_LEVEL_KEYS = ((b"6681430495957593", b"3870689237711935"),)
 _XXTEA_DELTA = 0x9E3779B9
 
 
@@ -1227,6 +1232,11 @@ def _bundle_asset_index(bundle: bytes, logical_name: str | None = None) -> tuple
                 except Exception:
                     failures += 1
                 continue
+            serialized = _decrypt_swap_aes_level(text)
+            if serialized is not None:
+                assets.setdefault("__serialized_levels__", []).append(
+                    {"container": name, "layout": serialized})
+                continue
             decoded = _unpack_msgpack(text)
             if name:
                 assets[name] = decoded
@@ -1258,7 +1268,7 @@ def _is_unity_bundle_candidate(info: zipfile.ZipInfo) -> bool:
 def _base64_envelope_bytes(raw: bytes) -> bytes | None:
     """Recognize a plain Base64 envelope without claiming it is decrypted."""
     try:
-        text = raw.decode("ascii").strip()
+        text = raw.removeprefix(b"\xef\xbb\xbf").decode("ascii").strip()
     except UnicodeDecodeError:
         return None
     if len(text) < 80 or not re.fullmatch(r"[A-Za-z0-9+/]*={0,2}", text):
@@ -1286,6 +1296,36 @@ def _decrypt_config_payload(decoded: bytes) -> Any | None:
     return None
 
 
+def _decrypt_swap_aes_level(raw: bytes) -> Any | None:
+    """Decode a LevelDataSerializer TextAsset; accept only padded, JSON output."""
+    decoded = _base64_envelope_bytes(raw)
+    if AES is None or decoded is None or len(decoded) % AES.block_size:
+        return None
+    shuffled = bytearray(decoded)
+    size = len(shuffled)
+    for index in range(size - 1, -1, -1):
+        other = (7 * index + 3) % size
+        shuffled[index], shuffled[other] = shuffled[other], shuffled[index]
+    for key, iv in _SWAP_AES_LEVEL_KEYS:
+        plain = AES.new(key, AES.MODE_CBC, iv).decrypt(bytes(shuffled))
+        padding = plain[-1]
+        if not 1 <= padding <= AES.block_size or plain[-padding:] != bytes([padding]) * padding:
+            continue
+        plain = plain[:-padding]
+        try:
+            if plain.startswith(b"\x1f\x8b"):
+                plain = gzip.decompress(plain)
+            return json.loads(plain.decode("utf-8-sig"))
+        except (OSError, EOFError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+    return None
+
+
+def _level_number_from_name(name: str) -> int | None:
+    match = re.search(r"(\d+)$", name)
+    return int(match.group(1)) if match else None
+
+
 def _collect_puzzle_exports(apk_paths: list[Path], emit,
                             cancel: threading.Event) -> tuple[list[dict], list[dict], int, int, dict[str, Any]]:
     groups: list[dict] = []
@@ -1306,6 +1346,7 @@ def _collect_puzzle_exports(apk_paths: list[Path], emit,
         "memory_bundles_decrypted": 0,
         "hdpk_packs_decoded": 0,
         "hdpk_level_payloads": 0,
+        "serialized_aes_levels_decoded": 0,
     }
 
     bundle_names = _load_bundle_name_index(apk_paths, emit, cancel)
@@ -1442,6 +1483,36 @@ def _collect_puzzle_exports(apk_paths: list[Path], emit,
                         stats["hdpk_packs_decoded"] += 1
                         stats["hdpk_level_payloads"] += len(group_levels)
                         emit(f"Giải mã HDPK: {bundle_name} / {container_name}; xuất {len(group_levels):,} level JSON gốc")
+
+                serialized_levels = assets.get("__serialized_levels__")
+                if isinstance(serialized_levels, list) and serialized_levels:
+                    serialized_levels.sort(key=lambda item: (
+                        _level_number_from_name(item["container"]) is None,
+                        _level_number_from_name(item["container"]) or 0, item["container"]))
+                    group_levels = []
+                    for ordinal, item in enumerate(serialized_levels, start=1):
+                        level_number = _level_number_from_name(item["container"]) or ordinal
+                        relative_path = Path("levels") / bundle_key / f"Level {level_number}.json"
+                        exports.append({"path": relative_path, "data": item["layout"]})
+                        group_levels.append({
+                            "name": f"Level {level_number}",
+                            "export_name": f"Level {level_number}",
+                            "level_number": level_number,
+                            "asset_name": item["container"],
+                            "file": relative_path.as_posix(),
+                        })
+                    groups.append({
+                        "bundle": bundle_name,
+                        "name": bundle_key,
+                        "listed_puzzles": len(group_levels),
+                        "exported_puzzles": len(group_levels),
+                        "missing_puzzles": 0,
+                        "levels": group_levels,
+                        "source_format": "LevelDataSerializer/Base64+Swap+AES-CBC(+GZip)/JSON",
+                    })
+                    group_count += len(group_levels)
+                    stats["serialized_aes_levels_decoded"] += len(group_levels)
+                    emit(f"Giải mã LevelDataSerializer: {bundle_name}; xuất {len(group_levels):,} level JSON")
 
                 folder_defs = assets.get("folders")
                 if not isinstance(folder_defs, list):
