@@ -191,6 +191,20 @@ class EhFrameTests(unittest.TestCase):
             binary.write_bytes(b"\x7fELFdata")
             self.assertEqual(eh_frame_functions(binary), [])
 
+    def test_code_encrypted_on_disk_is_detected(self):
+        import struct
+        from ducapk.native import encrypted_code
+        functions = [(0x100000 + i * 8, 8) for i in range(1000)]
+        header = _elf_with_eh_frame(functions)
+        header += b"\0" * (0x100000 - len(header))
+        with tempfile.TemporaryDirectory() as temp:
+            binary = Path(temp) / "libgame.so"
+            # Each function: one instruction then `ret`.
+            binary.write_bytes(header + struct.pack("<II", 0xD2800000, 0xD65F03C0) * 1000)
+            self.assertFalse(encrypted_code(binary))
+            binary.write_bytes(header + bytes(range(256)) * 32)
+            self.assertTrue(encrypted_code(binary))
+
     def test_sdk_libraries_are_not_game_code(self):
         from ducapk.native import library_category
         for name in ("libfmod.so", "libsentry-android.so", "libFirebaseCppApp-13_17_0.so",

@@ -176,6 +176,23 @@ def eh_frame_functions(binary: Path) -> list[tuple[int, int]]:
     return sorted((start - low, length) for start, length in functions.items() if start >= low)
 
 
+def encrypted_code(binary: Path) -> bool:
+    """True for an AArch64 library whose function bodies hold no `ret`: the code is encrypted on disk
+    and only decrypted in memory by a protector (NetEase Yidun, Bangcle...)."""
+    functions = eh_frame_functions(binary)
+    if len(functions) < 1000:
+        return False
+    with binary.open("rb") as handle:
+        header = handle.read(20)
+        if header[18:20] != struct.pack("<H", 183):  # EM_AARCH64
+            return False
+        low, high = functions[0][0], functions[-1][0] + functions[-1][1]
+        handle.seek(low)
+        code = handle.read(min(high - low, 64 * 1024 * 1024))
+    returns = sum(1 for (word,) in struct.iter_unpack("<I", code[:len(code) // 4 * 4]) if word == 0xD65F03C0)
+    return returns < len(functions) // 100
+
+
 def discover_native_libraries(apks: list[Path], job: Path, categories: set[str],
                               emit, cancel) -> list[dict]:
     manifest = job / "native_libraries.json"
@@ -222,6 +239,10 @@ def discover_native_libraries(apks: list[Path], job: Path, categories: set[str],
                        "size": size, "source": f"{apk}!{member}",
                        "binary": target.relative_to(job).as_posix()})
         emit(f"Đã lấy {abi} {name} ({size:,} byte); nhóm {category} theo tên thư viện.")
+        if encrypted_code(target):
+            result[-1]["encrypted"] = True
+            emit(f"CẢNH BÁO: code của {name} bị mã hoá trên file (packer/bảo vệ như NetEase Yidun); "
+                 "bỏ qua giải mã Ghidra vì pseudocode sẽ vô nghĩa. Cần dump thư viện từ RAM lúc game chạy.")
     if not result:
         raise ValueError("Không có thư viện native trong nhóm đã chọn. Chọn Logic game hoặc SDK.")
     manifest.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -279,8 +300,8 @@ def collect_native_results(job: Path, emit) -> dict:
                 with manifest.open(encoding="utf-8") as source, (metadata_dir / (lib["key"] + ".txt")).open("w", encoding="utf-8") as meta:
                     for line in source:
                         parts = line.rstrip("\n").split("\t")
-                        if len(parts) != 5:
-                            continue
+                        if len(parts) != 5 or not re.fullmatch(r"[0-9a-fA-F]+", parts[1]):
+                            continue  # e.g. ".note.gnu.proc::009110b5": a non-loaded overlay block
                         index, address = int(parts[0]), int(parts[1], 16)
                         name, namespace, signature = map(_decoded, parts[2:])
                         total += 1

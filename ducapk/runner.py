@@ -1025,9 +1025,15 @@ def _analyze_native(inputs, job, emit, cancel, with_ghidra, max_methods,
             raise AnalysisCancelled("Đã dừng; tiếp tục job để xử lý phần native còn lại.")
         directory = job / "native" / lib["key"]
         binary = job / lib["binary"]
+        if lib.get("encrypted"):
+            emit(f"Bỏ qua {lib['name']}: code bị mã hoá trên file, Ghidra chỉ thấy byte ngẫu nhiên.")
+            continue
         ready = directory / "analysis_ready"
         script = ["-scriptPath", str(ROOT / "scripts"), "-postScript", "DucAPKNative.java", str(directory)]
         _state(job, status="decompiling", native_library=lib["name"])
+        manifest = directory / "methods.tsv"
+        if ready.is_file() and manifest.is_file() and "::" in manifest.read_text(encoding="utf-8", errors="replace"):
+            ready.unlink()  # found by an older script that kept overlay addresses ("block::offset")
         if not (ready.is_file() and (_project_dir(directory) / "DucAPK.gpr").is_file()):
             # Stripped C++ keeps every function start in .eh_frame_hdr for exception unwinding;
             # creating functions from it replaces hours of global Auto Analyze.

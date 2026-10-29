@@ -42,6 +42,26 @@ public class DucAPKNative extends GhidraScript {
         return Math.max(1, Runtime.getRuntime().availableProcessors() - 2);
     }
 
+    /**
+     * The loaded address for a file virtual address. Protected libraries rename or overlap their
+     * section headers (all code inside a fake ".note.gnu.proc"); Ghidra then loads that code as an
+     * overlay block, where the plain address is not mapped.
+     */
+    private Address resolve(Address address) {
+        if (currentProgram.getMemory().contains(address)) return address;
+        for (MemoryBlock block : currentProgram.getMemory().getBlocks()) {
+            if (!block.isOverlay() || !block.isInitialized()) continue;
+            Address mapped = block.getStart().getAddressSpace().getAddress(address.getOffset());
+            if (block.contains(mapped)) return mapped;
+        }
+        return null;
+    }
+
+    /** Address key in methods.tsv/results.tsv: overlay addresses are written as plain offsets. */
+    private static String key(Function fn) {
+        return fn.getEntryPoint().getPhysicalAddress().toString();
+    }
+
     private void createFunctions(File startsFile) throws Exception {
         // "entry size" per line (hex); size comes from the function's FDE, 0 when unknown.
         List<long[]> starts = new ArrayList<>();
@@ -61,8 +81,8 @@ public class DucAPKNative extends GhidraScript {
             monitor.checkCancelled();
             index++;
             try {
-                Address address = base.add(start[0]);
-                if (!currentProgram.getMemory().contains(address) || getFunctionAt(address) != null) continue;
+                Address address = resolve(base.add(start[0]));
+                if (address == null || getFunctionAt(address) != null) continue;
                 if (start[1] > 0) {
                     // The exact extent keeps a body from running into the next function after a
                     // call that never returns, which Auto Analyze would otherwise have to discover.
@@ -256,7 +276,9 @@ public class DucAPKNative extends GhidraScript {
         while (iterator.hasNext()) {
             monitor.checkCancelled();
             Function fn = iterator.next();
-            if (!fn.isExternal() && !fn.isThunk()) functions.add(fn);
+            // Overlay blocks (".note.gnu.proc::...") are file data, not loaded code.
+            if (!fn.isExternal() && !fn.isThunk() && fn.getEntryPoint().getAddressSpace().isLoadedMemorySpace())
+                functions.add(fn);
         }
         // Preserve a completed manifest across resume; indices are in address order.
         File manifest = new File(directory, "methods.tsv");
@@ -264,7 +286,7 @@ public class DucAPKNative extends GhidraScript {
         try (PrintWriter out = new PrintWriter(temporary, StandardCharsets.UTF_8)) {
             int index = 0;
             for (Function fn : functions) {
-                out.println((++index) + "\t" + fn.getEntryPoint().toString() + "\t" +
+                out.println((++index) + "\t" + key(fn) + "\t" +
                     encode(fn.getName()) + "\t" + encode(fn.getParentNamespace().getName(true)) +
                     "\t" + encode(fn.getSignature().getPrototypeString()));
             }
@@ -296,7 +318,7 @@ public class DucAPKNative extends GhidraScript {
         // Named functions (exports, JNI entry points, symbols) say the most; decompile them first.
         List<Function> work = new ArrayList<>();
         for (Function fn : functions) {
-            if (!done.contains(fn.getEntryPoint().toString())) work.add(fn);
+            if (!done.contains(key(fn))) work.add(fn);
         }
         work.sort(Comparator.comparingInt(fn -> fn.getSymbol().getSource() == SourceType.DEFAULT ? 1 : 0));
         if (limit > 0 && work.size() > limit) work = work.subList(0, limit);
@@ -319,7 +341,7 @@ public class DucAPKNative extends GhidraScript {
             List<Future<?>> futures = new ArrayList<>();
             for (Function fn : work) {
                 futures.add(pool.submit(() -> {
-                    String address = fn.getEntryPoint().toString(), status = "error", body;
+                    String address = key(fn), status = "error", body;
                     try {
                         DecompileResults result = local.get().decompileFunction(fn, 30, TaskMonitor.DUMMY);
                         if (result.decompileCompleted() && result.getDecompiledFunction() != null) {

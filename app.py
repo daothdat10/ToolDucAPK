@@ -17,7 +17,7 @@ from tkinterdnd2 import DND_FILES, TkinterDnD
 from ducapk.runner import (AnalysisCancelled, DEFAULT_GHIDRA_THREADS, ROOT, analyze,
                            retry_failed_only, set_ghidra_threads)
 from ducapk.csharp_export import export_c_tree
-from ducapk.api_translation import APIConfig, export_api, test_connection
+from ducapk.api_translation import APIConfig, export_api, is_resumable, test_connection
 from ducapk.knowledge_view import KnowledgeGraphView
 from ducapk.eta import ProgressEta, finish_clock, format_duration
 from ducapk.readme_view import ReadmeView
@@ -109,7 +109,9 @@ class DucAPKApp(TkinterDnD.Tk):
         self.api_url_var = tk.StringVar(value="https://api.openai.com/v1")
         self.api_key_var = tk.StringVar(value=os.environ.get("DUCAPK_API_KEY", ""))
         self.api_model_var = tk.StringVar(value="")
-        self.api_timeout_var = tk.StringVar(value="180")
+        self.api_timeout_var = tk.StringVar(value="900")
+        self.api_workers_var = tk.StringVar(value="4")
+        self.api_skip_generated_var = tk.BooleanVar(value=True)
         self.api_source_var = tk.StringVar()
         self.api_output_var = tk.StringVar(value=str(ROOT / "output"))
         self.api_status_var = tk.StringVar(value="Nhập kết nối API và chọn file .c / .cs để bắt đầu.")
@@ -706,6 +708,7 @@ class DucAPKApp(TkinterDnD.Tk):
         for row, (label, variable) in enumerate([
             ("BASE URL", self.api_url_var), ("API KEY", self.api_key_var),
             ("MODEL", self.api_model_var), ("TIMEOUT (GIÂY)", self.api_timeout_var),
+            ("LUỒNG SONG SONG", self.api_workers_var),
         ], 1):
             ttk.Label(connection, text=label, style="Field.TLabel").grid(
                 row=row, column=0, sticky="w", padx=(0, 14))
@@ -721,9 +724,10 @@ class DucAPKApp(TkinterDnD.Tk):
                                        command=self._test_api)
         self.api_test_btn.grid(row=4, column=2, sticky="w", padx=(10, 0))
         note = ttk.Frame(connection, style="Panel.TFrame")
-        note.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        note.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         self._note(note, "Nhập đúng model của nhà cung cấp. Key chỉ giữ trong phiên; hỗ trợ DUCAPK_API_KEY. "
-                         "Nút kiểm tra gửi một yêu cầu nhỏ và có thể tính phí.")
+                         "Nút kiểm tra gửi một yêu cầu nhỏ và có thể tính phí. Luồng song song (1–16) "
+                         "gửi nhiều file cùng lúc; giảm xuống nếu API báo HTTP 429.")
 
         card, form = self._card(tab, "2", "Nguồn & đích", "Violet", "Dịch C → C# / hoàn thiện C#")
         card.pack(fill="x", pady=(14, 0))
@@ -742,11 +746,15 @@ class DucAPKApp(TkinterDnD.Tk):
             row=3, column=0, sticky="nw", padx=(0, 14), pady=(8, 0))
         instructions_frame, self.api_instructions = self._text_box(form, height=3, mono=False)
         instructions_frame.grid(row=3, column=1, columnspan=3, sticky="ew", pady=(6, 0))
+        ttk.Checkbutton(form, text="Bỏ qua _CompilerGenerated (anonymous type, closure — không có logic game)",
+                        variable=self.api_skip_generated_var, style="Violet.TCheckbutton").grid(
+                            row=4, column=1, columnspan=3, sticky="w", pady=(6, 0))
         note = ttk.Frame(form, style="Panel.TFrame")
-        note.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+        note.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(8, 0))
         self._note(note, "Khi bấm dịch, nội dung file được gửi đến API đã nhập và có thể tính phí. "
                          "Kết quả lưu trong thư mục mới; cần rà TODO và biên dịch. File tối đa 240 KB, "
-                         "không tự suy đoán logic thiếu.")
+                         "không tự suy đoán logic thiếu. Muốn dịch tiếp lượt cũ: chọn NƠI LƯU là "
+                         "chính thư mục kết quả cũ (có api_translation_report.json), file đã xong sẽ được giữ.")
 
         card, run = self._card(tab, "3", "Thực thi", "Violet")
         card.pack(fill="both", expand=True, pady=(14, 4))
@@ -1080,13 +1088,22 @@ class DucAPKApp(TkinterDnD.Tk):
             source = Path(self.api_source_var.get().strip()).resolve()
             if not source.exists() or (source.is_file() and source.suffix.lower() not in {".c", ".cs"}):
                 raise ValueError("Đầu vào phải là file .c/.cs hoặc thư mục tồn tại.")
-            destination = Path(self.api_output_var.get().strip()).resolve() / (
+            output = Path(self.api_output_var.get().strip()).resolve()
+            resume = is_resumable(output)
+            destination = output if resume else output / (
                 f"{source.stem}_API_CSharp_{datetime.now():%Y%m%d_%H%M%S_%f}")
             if source.is_dir() and source in destination.parents:
                 raise ValueError("Chọn nơi lưu nằm ngoài thư mục nguồn.")
+            try:
+                workers = int(self.api_workers_var.get())
+            except ValueError:
+                raise ValueError("Luồng song song phải là số từ 1 đến 16.") from None
         except ValueError as error:
             messagebox.showerror("API dịch mã", str(error))
             return
+        if resume:
+            self._api_message(f"Tiếp tục lượt cũ trong {destination}; file đã dịch xong sẽ được giữ.")
+        skip_generated = self.api_skip_generated_var.get()
         instructions = self.api_instructions.get("1.0", "end").strip()
         self.api_cancel.clear()
         self._set_api_busy(True)
@@ -1095,7 +1112,8 @@ class DucAPKApp(TkinterDnD.Tk):
         def run():
             try:
                 report = export_api(source, destination, config, instructions, self.api_cancel,
-                                    lambda done, total, msg: self.events.put(("api_progress", done, total, msg)))
+                                    lambda done, total, msg: self.events.put(("api_progress", done, total, msg)),
+                                    workers=workers, skip_compiler_generated=skip_generated, resume=resume)
                 self.events.put(("api_done", destination, report))
             except Exception as error:
                 self.events.put(("api_error", str(error)))

@@ -3,7 +3,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import tempfile
 import threading
+import time
 import unittest
+from unittest import mock
 
 from ducapk.api_translation import APIConfig, APIError, complete, export_api, test_connection, translate_file
 
@@ -15,6 +17,15 @@ class TranslationTests(unittest.TestCase):
             def do_POST(self):
                 payload = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 cls.requests.append((self.path, self.headers.get('Authorization'), payload))
+                content = payload['messages'][-1]['content']
+                if 'SLOW' in content:
+                    time.sleep(cls.slow_seconds)
+                with cls.lock:
+                    cls.active += 1
+                    cls.max_active = max(cls.max_active, cls.active)
+                time.sleep(cls.delay)
+                with cls.lock:
+                    cls.active -= 1
                 self.send_response(cls.status)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
@@ -22,6 +33,7 @@ class TranslationTests(unittest.TestCase):
 
             def log_message(self, *_):
                 pass
+        cls.lock = threading.Lock()
         cls.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -35,6 +47,10 @@ class TranslationTests(unittest.TestCase):
     def setUp(self):
         type(self).requests = []
         type(self).status = 200
+        type(self).delay = 0
+        type(self).slow_seconds = 0
+        type(self).active = 0
+        type(self).max_active = 0
         type(self).response = {'choices': [{'finish_reason': 'stop', 'message': {
             'content': '```csharp\npublic class Example { public int Count() => 2; }\n```'}}]}
         self.config = APIConfig(f'http://127.0.0.1:{self.server.server_port}/v1', 'test-model', 'secret-test-key')
@@ -122,6 +138,62 @@ class TranslationTests(unittest.TestCase):
         self.assertTrue(report['cancelled'])
         self.assertEqual(report['files_written'], 1)
         self.assertEqual(report['files_pending'], 1)
+
+    def _source_tree(self, names):
+        source = self.root / 'source'
+        for name in names:
+            (source / name).parent.mkdir(parents=True, exist_ok=True)
+            (source / name).write_text('int f() { return 2; }')
+        return source
+
+    def test_parallel_workers_send_requests_concurrently(self):
+        type(self).delay = 0.3
+        source = self._source_tree([f'f{i}.c' for i in range(8)])
+        report = export_api(source, self.root / 'output', self.config, workers=4)
+        self.assertEqual(report['files_written'], 8)
+        self.assertEqual(report['files_pending'], 0)
+        self.assertGreater(self.max_active, 1)
+        self.assertLessEqual(self.max_active, 4)
+
+    def test_timeout_on_one_file_does_not_stop_batch(self):
+        type(self).slow_seconds = 3
+        source = self._source_tree(['a.c', 'b.c'])
+        (source / 'a.c').write_text('int f() { return 2; } // SLOW')
+        config = APIConfig(self.config.base_url, 'test-model', 'k', timeout=1)
+        # 1s is below the allowed minimum; bypass validation so the test stays fast.
+        with mock.patch.object(APIConfig, 'validate'):
+            report = export_api(source, self.root / 'output', config)
+        by_source = {e['source']: e for e in report['files']}
+        self.assertEqual(by_source['a.c']['status'], 'failed')
+        self.assertIn('hết thời gian chờ', by_source['a.c']['error'])
+        self.assertEqual(by_source['b.c']['status'], 'needs_review')
+        self.assertNotIn('stopped_on_api_error', report)
+
+    def test_resume_keeps_finished_files_and_retries_the_rest(self):
+        source = self._source_tree(['a.c', 'b.c', 'c.c'])
+        destination = self.root / 'output'
+        cancel = threading.Event()
+        def progress(done, total, message):
+            if done == 1:
+                cancel.set()
+        first = export_api(source, destination, self.config, cancel=cancel, progress=progress)
+        self.assertEqual(first['files_written'], 1)
+        finished = destination / first['files'][0]['output']
+        before = finished.read_bytes()
+        self.requests.clear()
+        second = export_api(source, destination, self.config, resume=True)
+        self.assertEqual(second['files_resumed'], 1)
+        self.assertEqual(second['files_written'], 3)
+        self.assertEqual(second['files_pending'], 0)
+        self.assertEqual(len(self.requests), 2)
+        self.assertEqual(finished.read_bytes(), before)
+
+    def test_skip_compiler_generated(self):
+        source = self._source_tree(['Game/Player.c', '_CompilerGenerated/f__AnonymousType0.c'])
+        report = export_api(source, self.root / 'output', self.config, skip_compiler_generated=True)
+        self.assertEqual(report['files_found'], 1)
+        self.assertEqual(report['files_skipped_compiler_generated'], 1)
+        self.assertEqual(len(self.requests), 1)
 
     def test_reject_nested_destination_and_existing_output(self):
         source = self.root / 'source'
